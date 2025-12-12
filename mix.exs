@@ -68,6 +68,7 @@ defmodule BB.Servo.PCA9685.MixProject do
   defp deps do
     [
       {:bb, "~> 0.2"},
+      {:pca9685, "~> 1.1"},
 
       # dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
