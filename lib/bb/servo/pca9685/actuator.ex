@@ -15,7 +15,7 @@ defmodule BB.Servo.PCA9685.Actuator do
   1. Clamps the position to joint limits
   2. Converts to PWM pulse width
   3. Sends PWM command to the PCA9685 controller
-  4. Publishes a `BB.Servo.PCA9685.Message.PositionCommand` for sensors to consume
+  4. Publishes a `BB.Message.Actuator.BeginMotion` for sensors to consume
 
   ## Example DSL Usage
 
@@ -25,14 +25,15 @@ defmodule BB.Servo.PCA9685.Actuator do
         limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
 
         actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Servo.PCA9685.Sensor, actuator: :servo}
+        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
       end
   """
   use GenServer
 
   alias BB.Message
+  alias BB.Message.Actuator.BeginMotion
+  alias BB.Message.Actuator.Command
   alias BB.Process, as: BBProcess
-  alias BB.Servo.PCA9685.Message.PositionCommand
 
   @options Spark.Options.new!(
              bb: [
@@ -155,10 +156,26 @@ defmodule BB.Servo.PCA9685.Actuator do
   end
 
   @impl GenServer
-  def handle_cast({:set_position, angle}, state) when is_integer(angle),
-    do: handle_cast({:set_position, angle * 1.0}, state)
+  def handle_info({:bb, _path, %Message{payload: %Command.Position{} = cmd}}, state) do
+    {:noreply, state} = do_set_position(cmd.position, cmd.command_id, state)
+    {:noreply, state}
+  end
 
-  def handle_cast({:set_position, angle}, state) do
+  @impl GenServer
+  def handle_cast({:command, %Message{payload: %Command.Position{} = cmd}}, state) do
+    do_set_position(cmd.position, cmd.command_id, state)
+  end
+
+  @impl GenServer
+  def handle_call({:command, %Message{payload: %Command.Position{} = cmd}}, _from, state) do
+    {:noreply, new_state} = do_set_position(cmd.position, cmd.command_id, state)
+    {:reply, {:ok, :accepted}, new_state}
+  end
+
+  defp do_set_position(angle, command_id, state) when is_integer(angle),
+    do: do_set_position(angle * 1.0, command_id, state)
+
+  defp do_set_position(angle, command_id, state) do
     clamped_angle = clamp_angle(angle, state)
     new_pulse = angle_to_pulse(clamped_angle, state)
 
@@ -172,11 +189,16 @@ defmodule BB.Servo.PCA9685.Actuator do
         travel_time_ms = round(travel_distance / state.velocity_limit * 1000)
         expected_arrival = System.monotonic_time(:millisecond) + travel_time_ms
 
-        message =
-          Message.new!(PositionCommand, state.joint_name,
-            target: clamped_angle,
-            expected_arrival: expected_arrival
-          )
+        message_opts =
+          [
+            initial_position: state.current_angle,
+            target_position: clamped_angle,
+            expected_arrival: expected_arrival,
+            command_type: :position
+          ]
+          |> maybe_add_opt(:command_id, command_id)
+
+        message = Message.new!(BeginMotion, state.joint_name, message_opts)
 
         BB.publish(state.bb.robot, [:actuator | state.bb.path], message)
 
@@ -186,6 +208,9 @@ defmodule BB.Servo.PCA9685.Actuator do
         {:noreply, state}
     end
   end
+
+  defp maybe_add_opt(opts, _key, nil), do: opts
+  defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp clamp_angle(angle, state) do
     angle

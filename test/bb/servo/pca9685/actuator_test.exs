@@ -6,11 +6,24 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
   use ExUnit.Case, async: true
   use Mimic
 
+  alias BB.Message
+  alias BB.Message.Actuator.Command
   alias BB.Servo.PCA9685.Actuator
 
   @joint_name :test_joint
   @actuator_name :test_servo
   @controller_name :test_pca9685
+
+  defp position_command(position, opts \\ []) do
+    message_opts =
+      [position: position * 1.0]
+      |> maybe_add_opt(:command_id, opts[:command_id])
+
+    {:command, Message.new!(Command.Position, @joint_name, message_opts)}
+  end
+
+  defp maybe_add_opt(opts, _key, nil), do: opts
+  defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp default_bb_context do
     %{robot: TestRobot, path: [@joint_name, @actuator_name]}
@@ -185,7 +198,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, -1.0}, state)
+      Actuator.handle_cast(position_command(-1.0), state)
 
       assert_receive {:pulse, 500}
     end
@@ -198,7 +211,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, 1.0}, state)
+      Actuator.handle_cast(position_command(1.0), state)
 
       assert_receive {:pulse, 2500}
     end
@@ -211,7 +224,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, 0.0}, state)
+      Actuator.handle_cast(position_command(0.0), state)
 
       assert_receive {:pulse, 1500}
     end
@@ -248,7 +261,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, -1.0}, state)
+      Actuator.handle_cast(position_command(-1.0), state)
 
       assert_receive {:pulse, 2500}
     end
@@ -261,7 +274,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, 1.0}, state)
+      Actuator.handle_cast(position_command(1.0), state)
 
       assert_receive {:pulse, 500}
     end
@@ -297,7 +310,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, -5.0}, state)
+      Actuator.handle_cast(position_command(-5.0), state)
 
       assert_receive {:pulse, 500}
     end
@@ -310,7 +323,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, 5.0}, state)
+      Actuator.handle_cast(position_command(5.0), state)
 
       assert_receive {:pulse, 2500}
     end
@@ -338,12 +351,13 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast({:set_position, 0.5}, state)
+      Actuator.handle_cast(position_command(0.5), state)
 
       assert_receive {:published, TestRobot, [:actuator, @joint_name, @actuator_name], message}
 
-      assert %BB.Message{payload: %BB.Servo.PCA9685.Message.PositionCommand{} = cmd} = message
-      assert cmd.target == 0.5
+      assert %BB.Message{payload: %BB.Message.Actuator.BeginMotion{} = cmd} = message
+      assert cmd.initial_position == 0.0
+      assert cmd.target_position == 0.5
       assert is_integer(cmd.expected_arrival)
       assert cmd.expected_arrival > System.monotonic_time(:millisecond)
     end
@@ -357,7 +371,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
       end)
 
       before = System.monotonic_time(:millisecond)
-      Actuator.handle_cast({:set_position, 1.0}, state)
+      Actuator.handle_cast(position_command(1.0), state)
 
       assert_receive {:arrival, expected_arrival}
 
@@ -389,7 +403,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      assert {:noreply, new_state} = Actuator.handle_cast({:set_position, 0}, state)
+      assert {:noreply, new_state} = Actuator.handle_cast(position_command(0), state)
       assert new_state.current_angle == 0.0
 
       assert_receive :called
