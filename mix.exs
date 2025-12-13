@@ -77,7 +77,7 @@ defmodule BB.Servo.PCA9685.MixProject do
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.9", only: [:dev, :test], runtime: false},
       {:igniter, "~> 0.6", only: [:dev, :test], runtime: false},
-      {:mimic, "~> 1.7", only: :test, runtime: false},
+      {:mimic, "~> 2.2", only: :test, runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
     ]
   end
