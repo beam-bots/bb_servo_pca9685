@@ -44,6 +44,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
   defp stub_controller_success do
     stub(BB.Process, :call, fn _robot, _name, _msg, _timeout -> :ok end)
     stub(BB.Process, :call, fn _robot, _name, _msg -> :ok end)
+    stub(BB.Safety, :register, fn _module, _opts -> :ok end)
   end
 
   describe "init/1" do

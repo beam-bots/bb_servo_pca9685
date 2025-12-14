@@ -11,7 +11,7 @@ defmodule BB.Servo.PCA9685.ControllerTest do
   @controller_name :test_pca9685
 
   defp default_bb_context do
-    %{robot: TestRobot, path: [@controller_name]}
+    %{robot: TestRobot, path: [@controller_name], name: @controller_name}
   end
 
   defp default_opts do
@@ -28,6 +28,7 @@ defmodule BB.Servo.PCA9685.ControllerTest do
     stub(PCA9685.Device, :pulse_width, fn _pid, _channel, _us -> :ok end)
     stub(PCA9685.Device, :output_enable, fn _pid -> :ok end)
     stub(PCA9685.Device, :output_disable, fn _pid -> :ok end)
+    stub(BB.Safety, :register, fn _module, _opts -> :ok end)
   end
 
   describe "init/1" do
