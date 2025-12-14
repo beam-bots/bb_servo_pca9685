@@ -29,11 +29,32 @@ defmodule BB.Servo.PCA9685.Actuator do
       end
   """
   use GenServer
+  @behaviour BB.Safety
 
   alias BB.Message
   alias BB.Message.Actuator.BeginMotion
   alias BB.Message.Actuator.Command
   alias BB.Process, as: BBProcess
+
+  @doc """
+  Disable the servo by setting pulse width to 0.
+
+  Called by `BB.Safety.Controller` when the robot is disarmed or crashes.
+  This function works without GenServer state - it receives the robot module,
+  controller name, and channel from the opts provided during registration.
+  """
+  @impl BB.Safety
+  def disarm(opts) do
+    robot = Keyword.fetch!(opts, :robot)
+    controller = Keyword.fetch!(opts, :controller)
+    channel = Keyword.fetch!(opts, :channel)
+
+    case BBProcess.call(robot, controller, {:pulse_width, channel, 0}) do
+      :ok -> :ok
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   @options Spark.Options.new!(
              bb: [
@@ -73,6 +94,12 @@ defmodule BB.Servo.PCA9685.Actuator do
     with {:ok, opts} <- Spark.Options.validate(opts, @options),
          {:ok, state} <- build_state(opts),
          :ok <- set_initial_position(state) do
+      BB.Safety.register(__MODULE__,
+        robot: state.bb.robot,
+        path: state.bb.path,
+        opts: [robot: state.bb.robot, controller: state.controller, channel: state.channel]
+      )
+
       {:ok, state}
     else
       {:error, reason} -> {:stop, reason}

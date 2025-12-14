@@ -26,8 +26,41 @@ defmodule BB.Servo.PCA9685.Controller do
   - `:address` - (required) The I2C address of the PCA9685, e.g., `0x40`
   - `:pwm_freq` - PWM frequency in Hz (default: 50, suitable for servos)
   - `:oe_pin` - Optional GPIO pin for output enable control
+
+  ## Safety
+
+  This controller implements the `BB.Safety` behaviour. When the robot is disarmed
+  or crashes, the OE pin is pulled high to disable all servo outputs. If no OE pin
+  is configured, the disarm callback returns `:ok` (individual actuators handle
+  their own channel disarm).
   """
   use GenServer
+  @behaviour BB.Safety
+
+  @doc """
+  Disable all servo outputs by pulling the OE pin high.
+
+  Called by `BB.Safety.Controller` when the robot is disarmed or crashes.
+  If no OE pin is configured, returns :ok (individual actuators handle their channels).
+
+  Note: This callback calls through the Controller GenServer, so it only works
+  if the Controller process is still alive. For crash scenarios, individual
+  Actuator disarm callbacks provide per-channel safety.
+  """
+  @impl BB.Safety
+  def disarm(opts) do
+    name = Keyword.fetch!(opts, :name)
+
+    try do
+      case GenServer.call(name, :output_disable) do
+        :ok -> :ok
+        {:error, :no_oe_pin_configured} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    catch
+      :exit, _ -> :ok
+    end
+  end
 
   @options Spark.Options.new!(
              bb: [
@@ -64,8 +97,15 @@ defmodule BB.Servo.PCA9685.Controller do
       state = %{
         bb: opts[:bb],
         device: device,
-        oe_pin: opts[:oe_pin]
+        oe_pin: opts[:oe_pin],
+        name: opts[:bb].name
       }
+
+      BB.Safety.register(__MODULE__,
+        robot: state.bb.robot,
+        path: state.bb.path,
+        opts: [name: state.name]
+      )
 
       {:ok, state}
     else
