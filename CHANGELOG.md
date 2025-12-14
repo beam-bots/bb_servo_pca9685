@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.3.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.2.0...v0.3.0) (2025-12-14)
+
+
+
+
+### Features:
+
+* implement BB.Safety behaviour for safe disarm (#3) by James Harton
+
 ## [v0.2.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.1.0...v0.2.0) (2025-12-13)
 
 

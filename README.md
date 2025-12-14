@@ -27,7 +27,7 @@ Add `bb_servo_pca9685` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bb_servo_pca9685, "~> 0.2.0"}
+    {:bb_servo_pca9685, "~> 0.3.0"}
   ]
 end
 ```
