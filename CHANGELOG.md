@@ -11,6 +11,14 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.3.1](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.3.0...v0.3.1) (2025-12-20)
+
+
+### Improvements
+
+* update for compatibility with BB 0.6.
+
+
 ## [v0.3.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.2.0...v0.3.0) (2025-12-14)
 
 
