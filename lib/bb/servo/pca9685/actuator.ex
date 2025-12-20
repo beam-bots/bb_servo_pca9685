@@ -28,8 +28,7 @@ defmodule BB.Servo.PCA9685.Actuator do
         sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
       end
   """
-  use GenServer
-  @behaviour BB.Safety
+  use BB.Actuator
 
   alias BB.Message
   alias BB.Message.Actuator.BeginMotion
@@ -43,7 +42,7 @@ defmodule BB.Servo.PCA9685.Actuator do
   This function works without GenServer state - it receives the robot module,
   controller name, and channel from the opts provided during registration.
   """
-  @impl BB.Safety
+  @impl BB.Actuator
   def disarm(opts) do
     robot = Keyword.fetch!(opts, :robot)
     controller = Keyword.fetch!(opts, :controller)
@@ -56,43 +55,40 @@ defmodule BB.Servo.PCA9685.Actuator do
     end
   end
 
-  @options Spark.Options.new!(
-             bb: [
-               type: :map,
-               doc: "Automatically set by the robot supervisor",
-               required: true
-             ],
-             channel: [
-               type: {:in, 0..15},
-               doc: "The PCA9685 channel (0-15)",
-               required: true
-             ],
-             controller: [
-               type: :atom,
-               doc: "Name of the PCA9685 controller in the robot's registry",
-               required: true
-             ],
-             min_pulse: [
-               type: :pos_integer,
-               doc: "The minimum PWM pulse that can be sent to the servo (µs)",
-               default: 500
-             ],
-             max_pulse: [
-               type: :pos_integer,
-               doc: "The maximum PWM pulse that can be sent to the servo (µs)",
-               default: 2500
-             ],
-             reverse?: [
-               type: :boolean,
-               doc: "Reverse the servo rotation direction?",
-               default: false
-             ]
-           )
+  @impl BB.Actuator
+  def options_schema do
+    Spark.Options.new!(
+      channel: [
+        type: {:in, 0..15},
+        doc: "The PCA9685 channel (0-15)",
+        required: true
+      ],
+      controller: [
+        type: :atom,
+        doc: "Name of the PCA9685 controller in the robot's registry",
+        required: true
+      ],
+      min_pulse: [
+        type: :pos_integer,
+        doc: "The minimum PWM pulse that can be sent to the servo (µs)",
+        default: 500
+      ],
+      max_pulse: [
+        type: :pos_integer,
+        doc: "The maximum PWM pulse that can be sent to the servo (µs)",
+        default: 2500
+      ],
+      reverse?: [
+        type: :boolean,
+        doc: "Reverse the servo rotation direction?",
+        default: false
+      ]
+    )
+  end
 
   @impl GenServer
   def init(opts) do
-    with {:ok, opts} <- Spark.Options.validate(opts, @options),
-         {:ok, state} <- build_state(opts),
+    with {:ok, state} <- build_state(opts),
          :ok <- set_initial_position(state) do
       BB.Safety.register(__MODULE__,
         robot: state.bb.robot,
@@ -111,6 +107,10 @@ defmodule BB.Servo.PCA9685.Actuator do
     [name, joint_name | _] = Enum.reverse(opts.bb.path)
     robot = opts.bb.robot.robot()
 
+    min_pulse = Map.get(opts, :min_pulse, 500)
+    max_pulse = Map.get(opts, :max_pulse, 2500)
+    reverse? = Map.get(opts, :reverse?, false)
+
     with {:ok, joint} <- fetch_joint(robot, joint_name),
          {:ok, limits} <- validate_joint_limits(joint, joint_name) do
       lower_limit = limits.lower
@@ -118,17 +118,17 @@ defmodule BB.Servo.PCA9685.Actuator do
       range = upper_limit - lower_limit
       center_angle = (lower_limit + upper_limit) / 2
       velocity_limit = limits.velocity
-      pulse_range = opts.max_pulse - opts.min_pulse
+      pulse_range = max_pulse - min_pulse
 
-      initial_pulse = (opts.max_pulse + opts.min_pulse) / 2
+      initial_pulse = (max_pulse + min_pulse) / 2
 
       state = %{
         bb: opts.bb,
         channel: opts.channel,
         controller: opts.controller,
-        min_pulse: opts.min_pulse,
-        max_pulse: opts.max_pulse,
-        reverse?: opts.reverse?,
+        min_pulse: min_pulse,
+        max_pulse: max_pulse,
+        reverse?: reverse?,
         lower_limit: lower_limit,
         upper_limit: upper_limit,
         center_angle: center_angle,

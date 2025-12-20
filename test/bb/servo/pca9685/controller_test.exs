@@ -98,7 +98,9 @@ defmodule BB.Servo.PCA9685.ControllerTest do
     test "fails with missing required options" do
       stub_pca9685_success()
 
-      assert {:stop, _reason} = Controller.init(bb: default_bb_context())
+      assert_raise KeyError, fn ->
+        Controller.init(bb: default_bb_context())
+      end
     end
   end
 
