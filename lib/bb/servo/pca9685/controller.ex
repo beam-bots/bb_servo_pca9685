@@ -29,13 +29,34 @@ defmodule BB.Servo.PCA9685.Controller do
 
   ## Safety
 
-  This controller implements the `BB.Safety` behaviour. When the robot is disarmed
+  This controller implements the `BB.Controller` behaviour. When the robot is disarmed
   or crashes, the OE pin is pulled high to disable all servo outputs. If no OE pin
   is configured, the disarm callback returns `:ok` (individual actuators handle
   their own channel disarm).
   """
-  use GenServer
-  @behaviour BB.Safety
+  use BB.Controller,
+    options_schema: [
+      bus: [
+        type: :string,
+        doc: "The I2C bus name (e.g., \"i2c-1\")",
+        required: true
+      ],
+      address: [
+        type: :integer,
+        doc: "The I2C address of the PCA9685 (e.g., 0x40)",
+        required: true
+      ],
+      pwm_freq: [
+        type: :pos_integer,
+        doc: "PWM frequency in Hz",
+        default: 50
+      ],
+      oe_pin: [
+        type: :pos_integer,
+        doc: "GPIO pin for output enable control",
+        required: false
+      ]
+    ]
 
   @doc """
   Disable all servo outputs by pulling the OE pin high.
@@ -47,7 +68,7 @@ defmodule BB.Servo.PCA9685.Controller do
   if the Controller process is still alive. For crash scenarios, individual
   Actuator disarm callbacks provide per-channel safety.
   """
-  @impl BB.Safety
+  @impl BB.Controller
   def disarm(opts) do
     name = Keyword.fetch!(opts, :name)
 
@@ -62,63 +83,38 @@ defmodule BB.Servo.PCA9685.Controller do
     end
   end
 
-  @options Spark.Options.new!(
-             bb: [
-               type: :map,
-               doc: "Automatically set by the robot supervisor",
-               required: true
-             ],
-             bus: [
-               type: :string,
-               doc: "The I2C bus name (e.g., \"i2c-1\")",
-               required: true
-             ],
-             address: [
-               type: :integer,
-               doc: "The I2C address of the PCA9685 (e.g., 0x40)",
-               required: true
-             ],
-             pwm_freq: [
-               type: :pos_integer,
-               doc: "PWM frequency in Hz",
-               default: 50
-             ],
-             oe_pin: [
-               type: :pos_integer,
-               doc: "GPIO pin for output enable control",
-               required: false
-             ]
-           )
-
   @impl GenServer
   def init(opts) do
-    with {:ok, opts} <- Spark.Options.validate(opts, @options),
-         {:ok, device} <- start_device(opts) do
-      state = %{
-        bb: opts[:bb],
-        device: device,
-        oe_pin: opts[:oe_pin],
-        name: opts[:bb].name
-      }
+    bb = Keyword.fetch!(opts, :bb)
 
-      BB.Safety.register(__MODULE__,
-        robot: state.bb.robot,
-        path: state.bb.path,
-        opts: [name: state.name]
-      )
+    case start_device(opts) do
+      {:ok, device} ->
+        state = %{
+          bb: bb,
+          device: device,
+          oe_pin: opts[:oe_pin],
+          name: bb.name
+        }
 
-      {:ok, state}
-    else
-      {:error, reason} -> {:stop, reason}
+        BB.Safety.register(__MODULE__,
+          robot: state.bb.robot,
+          path: state.bb.path,
+          opts: [name: state.name]
+        )
+
+        {:ok, state}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
   end
 
   defp start_device(opts) do
     device_opts =
       [
-        bus: opts[:bus],
-        address: opts[:address],
-        pwm_freq: opts[:pwm_freq]
+        bus: Keyword.fetch!(opts, :bus),
+        address: Keyword.fetch!(opts, :address),
+        pwm_freq: Keyword.get(opts, :pwm_freq, 50)
       ]
       |> maybe_add_oe_pin(opts[:oe_pin])
 
