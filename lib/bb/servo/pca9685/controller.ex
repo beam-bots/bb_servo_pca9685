@@ -4,7 +4,7 @@
 
 defmodule BB.Servo.PCA9685.Controller do
   @moduledoc """
-  A controller GenServer that manages a PCA9685 PWM device.
+  A controller that manages a PCA9685 PWM device.
 
   This controller wraps a `PCA9685.Device` process and provides an interface
   for actuators to set servo pulse widths. Multiple actuators can share a
@@ -83,7 +83,7 @@ defmodule BB.Servo.PCA9685.Controller do
     end
   end
 
-  @impl GenServer
+  @impl BB.Controller
   def init(opts) do
     bb = Keyword.fetch!(opts, :bb)
 
@@ -124,7 +124,7 @@ defmodule BB.Servo.PCA9685.Controller do
   defp maybe_add_oe_pin(opts, nil), do: opts
   defp maybe_add_oe_pin(opts, oe_pin), do: Keyword.put(opts, :oe_pin, oe_pin)
 
-  @impl GenServer
+  @impl BB.Controller
   def handle_call({:pulse_width, channel, microseconds}, _from, state) do
     result = PCA9685.Device.pulse_width(state.device, channel, microseconds)
     {:reply, result, state}
@@ -148,7 +148,7 @@ defmodule BB.Servo.PCA9685.Controller do
     {:reply, result, state}
   end
 
-  @impl GenServer
+  @impl BB.Controller
   def terminate(_reason, state) do
     PCA9685.release(state.device)
     :ok

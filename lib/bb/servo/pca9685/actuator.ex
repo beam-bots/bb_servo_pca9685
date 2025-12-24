@@ -4,7 +4,7 @@
 
 defmodule BB.Servo.PCA9685.Actuator do
   @moduledoc """
-  An actuator GenServer that uses a PCA9685 controller to drive a servo.
+  An actuator that uses a PCA9685 controller to drive a servo.
 
   This actuator derives its configuration from the joint constraints defined in the robot:
   - Position limits from `joint.limits.lower` and `joint.limits.upper`
@@ -28,7 +28,34 @@ defmodule BB.Servo.PCA9685.Actuator do
         sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
       end
   """
-  use BB.Actuator
+  use BB.Actuator,
+    options_schema: [
+      channel: [
+        type: {:in, 0..15},
+        doc: "The PCA9685 channel (0-15)",
+        required: true
+      ],
+      controller: [
+        type: :atom,
+        doc: "Name of the PCA9685 controller in the robot's registry",
+        required: true
+      ],
+      min_pulse: [
+        type: :pos_integer,
+        doc: "The minimum PWM pulse that can be sent to the servo (µs)",
+        default: 500
+      ],
+      max_pulse: [
+        type: :pos_integer,
+        doc: "The maximum PWM pulse that can be sent to the servo (µs)",
+        default: 2500
+      ],
+      reverse?: [
+        type: :boolean,
+        doc: "Reverse the servo rotation direction?",
+        default: false
+      ]
+    ]
 
   alias BB.Message
   alias BB.Message.Actuator.BeginMotion
@@ -56,37 +83,6 @@ defmodule BB.Servo.PCA9685.Actuator do
   end
 
   @impl BB.Actuator
-  def options_schema do
-    Spark.Options.new!(
-      channel: [
-        type: {:in, 0..15},
-        doc: "The PCA9685 channel (0-15)",
-        required: true
-      ],
-      controller: [
-        type: :atom,
-        doc: "Name of the PCA9685 controller in the robot's registry",
-        required: true
-      ],
-      min_pulse: [
-        type: :pos_integer,
-        doc: "The minimum PWM pulse that can be sent to the servo (µs)",
-        default: 500
-      ],
-      max_pulse: [
-        type: :pos_integer,
-        doc: "The maximum PWM pulse that can be sent to the servo (µs)",
-        default: 2500
-      ],
-      reverse?: [
-        type: :boolean,
-        doc: "Reverse the servo rotation direction?",
-        default: false
-      ]
-    )
-  end
-
-  @impl GenServer
   def init(opts) do
     with {:ok, state} <- build_state(opts),
          :ok <- set_initial_position(state) do
@@ -182,18 +178,18 @@ defmodule BB.Servo.PCA9685.Actuator do
     end
   end
 
-  @impl GenServer
+  @impl BB.Actuator
   def handle_info({:bb, _path, %Message{payload: %Command.Position{} = cmd}}, state) do
     {:noreply, state} = do_set_position(cmd.position, cmd.command_id, state)
     {:noreply, state}
   end
 
-  @impl GenServer
+  @impl BB.Actuator
   def handle_cast({:command, %Message{payload: %Command.Position{} = cmd}}, state) do
     do_set_position(cmd.position, cmd.command_id, state)
   end
 
-  @impl GenServer
+  @impl BB.Actuator
   def handle_call({:command, %Message{payload: %Command.Position{} = cmd}}, _from, state) do
     {:noreply, new_state} = do_set_position(cmd.position, cmd.command_id, state)
     {:reply, {:ok, :accepted}, new_state}
