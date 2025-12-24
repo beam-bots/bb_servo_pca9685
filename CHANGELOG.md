@@ -11,6 +11,13 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.4.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.3.1...v0.4.0) (2025-12-24)
+### Breaking Changes:
+
+* update to bb 0.8 wrapper GenServer pattern (#7) by James Harton
+
+
+
 ## [v0.3.1](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.3.0...v0.3.1) (2025-12-20)
 
 

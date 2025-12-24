@@ -9,7 +9,7 @@ defmodule BB.Servo.PCA9685.MixProject do
   Beam Bots integration for PCA9685 connected RC servos.
   """
 
-  @version "0.3.1"
+  @version "0.4.0"
 
   def project do
     [
