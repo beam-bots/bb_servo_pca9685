@@ -6,6 +6,7 @@ defmodule BB.Servo.PCA9685.ControllerTest do
   use ExUnit.Case, async: true
   use Mimic
 
+  alias BB.Error.Hardware.NoOutputEnablePin
   alias BB.Servo.PCA9685.Controller
 
   @controller_name :test_pca9685
@@ -137,7 +138,7 @@ defmodule BB.Servo.PCA9685.ControllerTest do
       stub_pca9685_success()
       {:ok, state} = Controller.init(default_opts())
 
-      assert {:reply, {:error, :no_oe_pin_configured}, _state} =
+      assert {:reply, {:error, %NoOutputEnablePin{controller: @controller_name}}, _state} =
                Controller.handle_call(:output_enable, self(), state)
     end
 
@@ -165,7 +166,7 @@ defmodule BB.Servo.PCA9685.ControllerTest do
       stub_pca9685_success()
       {:ok, state} = Controller.init(default_opts())
 
-      assert {:reply, {:error, :no_oe_pin_configured}, _state} =
+      assert {:reply, {:error, %NoOutputEnablePin{controller: @controller_name}}, _state} =
                Controller.handle_call(:output_disable, self(), state)
     end
 
