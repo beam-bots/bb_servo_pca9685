@@ -58,6 +58,8 @@ defmodule BB.Servo.PCA9685.Controller do
       ]
     ]
 
+  alias BB.Error.Hardware.NoOutputEnablePin
+
   @doc """
   Disable all servo outputs by pulling the OE pin high.
 
@@ -75,7 +77,7 @@ defmodule BB.Servo.PCA9685.Controller do
     try do
       case GenServer.call(name, :output_disable) do
         :ok -> :ok
-        {:error, :no_oe_pin_configured} -> :ok
+        {:error, %NoOutputEnablePin{}} -> :ok
         {:error, reason} -> {:error, reason}
       end
     catch
@@ -130,8 +132,8 @@ defmodule BB.Servo.PCA9685.Controller do
     {:reply, result, state}
   end
 
-  def handle_call(:output_enable, _from, %{oe_pin: nil} = state) do
-    {:reply, {:error, :no_oe_pin_configured}, state}
+  def handle_call(:output_enable, _from, %{oe_pin: nil, name: name} = state) do
+    {:reply, {:error, %NoOutputEnablePin{controller: name}}, state}
   end
 
   def handle_call(:output_enable, _from, state) do
@@ -139,8 +141,8 @@ defmodule BB.Servo.PCA9685.Controller do
     {:reply, result, state}
   end
 
-  def handle_call(:output_disable, _from, %{oe_pin: nil} = state) do
-    {:reply, {:error, :no_oe_pin_configured}, state}
+  def handle_call(:output_disable, _from, %{oe_pin: nil, name: name} = state) do
+    {:reply, {:error, %NoOutputEnablePin{controller: name}}, state}
   end
 
   def handle_call(:output_disable, _from, state) do
