@@ -11,6 +11,19 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.5.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.4.0...v0.5.0) (2026-01-11)
+
+
+
+
+### Features:
+
+* migrate to structured error system (#8) by James Harton
+
+### Improvements:
+
+* use structured error for missing OE pin (#9) by James Harton
+
 ## [v0.4.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.3.1...v0.4.0) (2025-12-24)
 ### Breaking Changes:
 
