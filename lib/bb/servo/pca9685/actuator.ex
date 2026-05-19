@@ -49,19 +49,16 @@ defmodule BB.Servo.PCA9685.Actuator do
         type: :pos_integer,
         doc: "The maximum PWM pulse that can be sent to the servo (µs)",
         default: 2500
-      ],
-      reverse?: [
-        type: :boolean,
-        doc: "Reverse the servo rotation direction?",
-        default: false
       ]
     ]
 
+  alias BB.Actuator, as: ActuatorApi
   alias BB.Error.Invalid.JointConfig, as: JointConfigError
   alias BB.Message
   alias BB.Message.Actuator.BeginMotion
   alias BB.Message.Actuator.Command
   alias BB.Process, as: BBProcess
+  alias BB.Transmission
 
   @doc """
   Disable the servo by setting pulse width to 0.
@@ -103,21 +100,20 @@ defmodule BB.Servo.PCA9685.Actuator do
     opts = Map.new(opts)
     [name, joint_name | _] = Enum.reverse(opts.bb.path)
     robot = opts.bb.robot.robot()
+    transmission = ActuatorApi.current_transmission()
 
     min_pulse = Map.get(opts, :min_pulse, 500)
     max_pulse = Map.get(opts, :max_pulse, 2500)
-    reverse? = Map.get(opts, :reverse?, false)
 
     with {:ok, joint} <- fetch_joint(robot, joint_name),
          {:ok, limits} <- validate_joint_limits(joint, joint_name) do
-      lower_limit = limits.lower
-      upper_limit = limits.upper
-      range = upper_limit - lower_limit
-      center_angle = (lower_limit + upper_limit) / 2
-      velocity_limit = limits.velocity
+      {motor_lower, motor_upper} = motor_position_limits(limits, transmission)
+      motor_range = motor_upper - motor_lower
+      motor_velocity_limit = motor_velocity_limit(limits.velocity, transmission)
       pulse_range = max_pulse - min_pulse
 
       initial_pulse = (max_pulse + min_pulse) / 2
+      current_motor_angle = (motor_lower + motor_upper) / 2
 
       state = %{
         bb: opts.bb,
@@ -125,21 +121,33 @@ defmodule BB.Servo.PCA9685.Actuator do
         controller: opts.controller,
         min_pulse: min_pulse,
         max_pulse: max_pulse,
-        reverse?: reverse?,
-        lower_limit: lower_limit,
-        upper_limit: upper_limit,
-        center_angle: center_angle,
-        range: range,
-        velocity_limit: velocity_limit,
+        motor_lower: motor_lower,
+        motor_upper: motor_upper,
+        motor_range: motor_range,
+        motor_velocity_limit: motor_velocity_limit,
         pulse_range: pulse_range,
         current_pulse: initial_pulse,
-        current_angle: center_angle,
+        current_motor_angle: current_motor_angle,
         name: name,
         joint_name: joint_name
       }
 
       {:ok, state}
     end
+  end
+
+  defp motor_position_limits(limits, nil), do: {limits.lower, limits.upper}
+
+  defp motor_position_limits(limits, transmission) do
+    a = Transmission.apply_position(limits.lower, transmission)
+    b = Transmission.apply_position(limits.upper, transmission)
+    {min(a, b), max(a, b)}
+  end
+
+  defp motor_velocity_limit(velocity, nil), do: velocity
+
+  defp motor_velocity_limit(velocity, transmission) do
+    abs(Transmission.apply_rate(velocity, transmission))
   end
 
   defp fetch_joint(robot, joint_name) do
@@ -225,12 +233,12 @@ defmodule BB.Servo.PCA9685.Actuator do
     {:reply, {:ok, :accepted}, new_state}
   end
 
-  defp do_set_position(angle, command_id, state) when is_integer(angle),
-    do: do_set_position(angle * 1.0, command_id, state)
+  defp do_set_position(motor_angle, command_id, state) when is_integer(motor_angle),
+    do: do_set_position(motor_angle * 1.0, command_id, state)
 
-  defp do_set_position(angle, command_id, state) do
-    clamped_angle = clamp_angle(angle, state)
-    new_pulse = angle_to_pulse(clamped_angle, state)
+  defp do_set_position(motor_angle, command_id, state) do
+    clamped_motor_angle = clamp_motor_angle(motor_angle, state)
+    new_pulse = motor_angle_to_pulse(clamped_motor_angle, state)
 
     case BBProcess.call(
            state.bb.robot,
@@ -238,14 +246,14 @@ defmodule BB.Servo.PCA9685.Actuator do
            {:pulse_width, state.channel, new_pulse}
          ) do
       result when result == :ok or (is_tuple(result) and elem(result, 0) == :ok) ->
-        travel_distance = abs(state.current_angle - clamped_angle)
-        travel_time_ms = round(travel_distance / state.velocity_limit * 1000)
+        travel_distance = abs(state.current_motor_angle - clamped_motor_angle)
+        travel_time_ms = round(travel_distance / state.motor_velocity_limit * 1000)
         expected_arrival = System.monotonic_time(:millisecond) + travel_time_ms
 
         message_opts =
           [
-            initial_position: state.current_angle,
-            target_position: clamped_angle,
+            initial_position: state.current_motor_angle,
+            target_position: clamped_motor_angle,
             expected_arrival: expected_arrival,
             command_type: :position
           ]
@@ -255,7 +263,7 @@ defmodule BB.Servo.PCA9685.Actuator do
 
         BB.publish(state.bb.robot, [:actuator | state.bb.path], message)
 
-        {:noreply, %{state | current_pulse: new_pulse, current_angle: clamped_angle}}
+        {:noreply, %{state | current_pulse: new_pulse, current_motor_angle: clamped_motor_angle}}
 
       {:error, _reason} ->
         {:noreply, state}
@@ -265,22 +273,16 @@ defmodule BB.Servo.PCA9685.Actuator do
   defp maybe_add_opt(opts, _key, nil), do: opts
   defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
-  defp clamp_angle(angle, state) do
-    angle
-    |> max(state.lower_limit)
-    |> min(state.upper_limit)
+  defp clamp_motor_angle(motor_angle, state) do
+    motor_angle
+    |> max(state.motor_lower)
+    |> min(state.motor_upper)
   end
 
-  defp angle_to_pulse(angle, state) do
-    normalised = (angle - state.lower_limit) / state.range
-
-    pulse =
-      if state.reverse? do
-        state.max_pulse - normalised * state.pulse_range
-      else
-        state.min_pulse + normalised * state.pulse_range
-      end
-
-    round(pulse)
+  # Motor-space angle maps linearly to PWM pulse width: motor_lower → min_pulse,
+  # motor_upper → max_pulse.
+  defp motor_angle_to_pulse(motor_angle, state) do
+    normalised = (motor_angle - state.motor_lower) / state.motor_range
+    round(state.min_pulse + normalised * state.pulse_range)
   end
 end

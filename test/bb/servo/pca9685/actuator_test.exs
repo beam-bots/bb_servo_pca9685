@@ -59,11 +59,10 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
       opts = [bb: default_bb_context(), channel: 0, controller: @controller_name]
       assert {:ok, state} = Actuator.init(opts)
 
-      assert state.lower_limit == -0.5
-      assert state.upper_limit == 0.5
-      assert state.velocity_limit == 1.0
-      assert state.range == 1.0
-      assert state.center_angle == 0.0
+      assert state.motor_lower == -0.5
+      assert state.motor_upper == 0.5
+      assert state.motor_velocity_limit == 1.0
+      assert state.motor_range == 1.0
     end
 
     test "stores channel and controller name" do
@@ -135,7 +134,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
       opts = [bb: default_bb_context(), channel: 0, controller: @controller_name]
       assert {:ok, state} = Actuator.init(opts)
 
-      assert state.current_angle == 0.0
+      assert state.current_motor_angle == 0.0
       assert state.current_pulse == 1500.0
     end
 
@@ -167,8 +166,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
       opts = [bb: default_bb_context(), channel: 0, controller: @controller_name]
       assert {:ok, state} = Actuator.init(opts)
 
-      assert state.center_angle == 1.0
-      assert state.current_angle == 1.0
+      assert state.current_motor_angle == 1.0
     end
   end
 
@@ -234,55 +232,6 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
     end
   end
 
-  describe "reverse mode" do
-    setup do
-      stub(BB.Robot, :get_joint, fn _robot, @joint_name ->
-        joint_with_limits(-1.0, 1.0, 1.0)
-      end)
-
-      stub_controller_success()
-      stub(BB, :publish, fn _robot, _path, _msg -> :ok end)
-
-      opts = [
-        bb: default_bb_context(),
-        channel: 0,
-        controller: @controller_name,
-        min_pulse: 500,
-        max_pulse: 2500,
-        reverse?: true
-      ]
-
-      {:ok, state} = Actuator.init(opts)
-
-      {:ok, state: state}
-    end
-
-    test "lower limit maps to max_pulse when reversed", %{state: state} do
-      test_pid = self()
-
-      expect(BB.Process, :call, fn TestRobot, @controller_name, {:pulse_width, 0, pulse} ->
-        send(test_pid, {:pulse, pulse})
-        :ok
-      end)
-
-      Actuator.handle_cast(position_command(-1.0), state)
-
-      assert_receive {:pulse, 2500}
-    end
-
-    test "upper limit maps to min_pulse when reversed", %{state: state} do
-      test_pid = self()
-
-      expect(BB.Process, :call, fn TestRobot, @controller_name, {:pulse_width, 0, pulse} ->
-        send(test_pid, {:pulse, pulse})
-        :ok
-      end)
-
-      Actuator.handle_cast(position_command(1.0), state)
-
-      assert_receive {:pulse, 500}
-    end
-  end
 
   describe "position clamping" do
     setup do
@@ -408,7 +357,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
       end)
 
       assert {:noreply, new_state} = Actuator.handle_cast(position_command(0), state)
-      assert new_state.current_angle == 0.0
+      assert new_state.current_motor_angle == 0.0
 
       assert_receive :called
     end
