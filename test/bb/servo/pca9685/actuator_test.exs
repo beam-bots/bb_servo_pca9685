@@ -232,7 +232,6 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
     end
   end
 
-
   describe "position clamping" do
     setup do
       stub(BB.Robot, :get_joint, fn _robot, @joint_name ->
