@@ -59,9 +59,7 @@ if Code.ensure_loaded?(Igniter) do
       |> Formatter.import_dep(:bb_servo_pca9685)
       |> BB.Igniter.add_controller(robot_module, name, controller_code(name))
       |> BB.Igniter.add_param_group(robot_module, [:config, @param_group], param_group_body())
-      |> BB.Igniter.set_robot_opts(robot_module,
-        params: [config: [{@param_group, [bus: bus]}]]
-      )
+      |> BB.Igniter.set_robot_param_default(robot_module, [:config, @param_group, :bus], bus)
       |> Igniter.add_notice(topology_snippet(name))
     end
 
