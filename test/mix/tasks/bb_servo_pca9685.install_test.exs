@@ -49,20 +49,30 @@ defmodule Mix.Tasks.BbServoPca9685.InstallTest do
     end
   end
 
-  describe "application module" do
-    test "sets the bus name on the robot child spec" do
+  describe "application config" do
+    test "writes the bus default to config/config.exs" do
       project_with_robot()
       |> Igniter.compose_task("bb_servo_pca9685.install")
-      |> assert_has_patch("lib/test/application.ex", ~s'''
-      + |    children = [{Test.Robot, [params: [config: [pca9685: [bus: "i2c-1"]]]]}]
-      ''')
+      |> assert_creates("config/config.exs", """
+      import Config
+      config :test, Test.Robot, params: [config: [pca9685: [bus: "i2c-1"]]]
+      """)
     end
 
     test "honours a custom --bus option" do
       project_with_robot()
       |> Igniter.compose_task("bb_servo_pca9685.install", ["--bus", "i2c-2"])
+      |> assert_creates("config/config.exs", """
+      import Config
+      config :test, Test.Robot, params: [config: [pca9685: [bus: "i2c-2"]]]
+      """)
+    end
+
+    test "reads the robot child opts from the application env" do
+      project_with_robot()
+      |> Igniter.compose_task("bb_servo_pca9685.install")
       |> assert_has_patch("lib/test/application.ex", ~s'''
-      + |    children = [{Test.Robot, [params: [config: [pca9685: [bus: "i2c-2"]]]]}]
+      + |    children = [{Test.Robot, Application.get_env(:test, Test.Robot, [])}]
       ''')
     end
   end
