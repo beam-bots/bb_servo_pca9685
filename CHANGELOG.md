@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.6.1](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.6.0...v0.6.1) (2026-05-28)
+
+
+
+
+### Bug Fixes:
+
+* bump bb to `~> 0.20`, use `set_robot_param_default` (#39) by James Harton
+
 ## [v0.6.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.5.2...v0.6.0) (2026-05-21)
 
 
