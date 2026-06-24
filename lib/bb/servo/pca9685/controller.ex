@@ -33,6 +33,14 @@ defmodule BB.Servo.PCA9685.Controller do
   or crashes, the OE pin is pulled high to disable all servo outputs. If no OE pin
   is configured, the disarm callback returns `:ok` (individual actuators handle
   their own channel disarm).
+
+  Both the I2C bus handle and the OE GPIO live inside the wrapped device process, so
+  `disarm/1` can only reach the hardware while the controller process is alive. If the
+  controller has crashed or is wedged, the disarm call fails and returns
+  `{:error, reason}`, driving the robot into the `:error` state rather than falsely
+  reporting success. For a hardware-independent kill that survives a dead controller,
+  wire an `:oe_pin`: a clean controller shutdown pulls it high via the device's
+  `terminate/2`.
   """
   use BB.Controller,
     options_schema: [
@@ -67,8 +75,9 @@ defmodule BB.Servo.PCA9685.Controller do
   If no OE pin is configured, returns :ok (individual actuators handle their channels).
 
   Note: This callback calls through the Controller GenServer, so it only works
-  if the Controller process is still alive. For crash scenarios, individual
-  Actuator disarm callbacks provide per-channel safety.
+  if the Controller process is still alive. If the call cannot be delivered the
+  hardware cannot be made safe, so `{:error, reason}` is returned (driving the
+  robot into the `:error` state) rather than a false `:ok`.
   """
   @impl BB.Controller
   def disarm(opts) do
@@ -81,7 +90,7 @@ defmodule BB.Servo.PCA9685.Controller do
         {:error, reason} -> {:error, reason}
       end
     catch
-      :exit, _ -> :ok
+      :exit, reason -> {:error, {:exit, reason}}
     end
   end
 

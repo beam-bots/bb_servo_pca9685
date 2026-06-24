@@ -9,6 +9,19 @@ defmodule BB.Servo.PCA9685.ControllerTest do
   alias BB.Error.Hardware.NoOutputEnablePin
   alias BB.Servo.PCA9685.Controller
 
+  defmodule OutputDisableStub do
+    @moduledoc false
+    use GenServer
+
+    def start_link({reply, name}), do: GenServer.start_link(__MODULE__, reply, name: name)
+
+    @impl GenServer
+    def init(reply), do: {:ok, reply}
+
+    @impl GenServer
+    def handle_call(:output_disable, _from, reply), do: {:reply, reply, reply}
+  end
+
   @controller_name :test_pca9685
 
   defp default_bb_context do
@@ -206,4 +219,35 @@ defmodule BB.Servo.PCA9685.ControllerTest do
       assert_receive {:release, _pid}
     end
   end
+
+  describe "disarm/1" do
+    test "returns :ok when the controller disables output" do
+      name = unique_name()
+      start_supervised!(%{id: name, start: {OutputDisableStub, :start_link, [{:ok, name}]}})
+
+      assert :ok = Controller.disarm(name: name)
+    end
+
+    test "treats a missing OE pin as :ok" do
+      name = unique_name()
+      reply = {:error, %NoOutputEnablePin{controller: name}}
+      start_supervised!(%{id: name, start: {OutputDisableStub, :start_link, [{reply, name}]}})
+
+      assert :ok = Controller.disarm(name: name)
+    end
+
+    test "propagates a hardware error" do
+      name = unique_name()
+      reply = {:error, :i2c_fault}
+      start_supervised!(%{id: name, start: {OutputDisableStub, :start_link, [{reply, name}]}})
+
+      assert {:error, :i2c_fault} = Controller.disarm(name: name)
+    end
+
+    test "returns an error when the controller process is dead" do
+      assert {:error, {:exit, _reason}} = Controller.disarm(name: unique_name())
+    end
+  end
+
+  defp unique_name, do: :"pca9685_disarm_#{System.unique_integer([:positive])}"
 end

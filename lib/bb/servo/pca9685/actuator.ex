@@ -66,8 +66,11 @@ defmodule BB.Servo.PCA9685.Actuator do
   Disable the servo by setting pulse width to 0.
 
   Called by `BB.Safety.Controller` when the robot is disarmed or crashes.
-  This function works without GenServer state - it receives the robot module,
-  controller name, and channel from the opts provided during registration.
+  It needs no actuator state - the robot module, controller name, and channel
+  come from the opts provided during registration - but the write is still routed
+  through the controller, so it requires the controller process to be alive. If the
+  controller is unreachable the call exits and the disarm fails, driving the robot
+  into the `:error` state.
   """
   @impl BB.Actuator
   def disarm(opts) do
