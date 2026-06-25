@@ -11,6 +11,19 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.6.2](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.6.1...v0.6.2) (2026-06-25)
+
+
+
+
+### Bug Fixes:
+
+* disarm reports failure instead of false success on dead controller (#57) (#63) by James Harton
+
+### Improvements:
+
+* support bb 0.20.3 robot_opts/0 child spec (#52) by James Harton
+
 ## [v0.6.1](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.6.0...v0.6.1) (2026-05-28)
 
 
