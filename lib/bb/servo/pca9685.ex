@@ -6,14 +6,16 @@ defmodule BB.Servo.PCA9685 do
   @moduledoc """
   BB integration for driving RC servos via the PCA9685 PWM controller.
 
-  This library provides controller, actuator and sensor modules for controlling
-  RC servos through a PCA9685 16-channel PWM controller connected via I2C.
+  This library provides controller and actuator modules for controlling RC
+  servos through a PCA9685 16-channel PWM controller connected via I2C. For
+  open-loop position feedback, use `BB.Sensor.OpenLoopPositionEstimator` from
+  BB core.
 
   ## Components
 
   - `BB.Servo.PCA9685.Controller` - Manages the PCA9685 device connection
   - `BB.Servo.PCA9685.Actuator` - Controls servo position via a controller channel
-  - `BB.Servo.PCA9685.Sensor` - Provides position feedback by subscribing to actuator commands
+  - `BB.Sensor.OpenLoopPositionEstimator` - Estimates position from actuator motion messages
 
   ## Requirements
 
@@ -24,20 +26,22 @@ defmodule BB.Servo.PCA9685 do
 
   Define a controller and joints with servo actuators in your robot DSL:
 
-      controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+      controllers do
+        controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+      end
 
       joint :shoulder, type: :revolute do
         limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
 
         actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Servo.PCA9685.Sensor, actuator: :servo}
+        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
       end
 
       joint :elbow, type: :revolute do
         limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(45 degree_per_second)
 
         actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
-        sensor :feedback, {BB.Servo.PCA9685.Sensor, actuator: :servo}
+        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
       end
 
   The actuator automatically derives its configuration from the joint limits - no need
@@ -65,12 +69,13 @@ defmodule BB.Servo.PCA9685 do
   1. Clamps the position to joint limits
   2. Converts to PWM pulse width
   3. Sends command to the controller
-  4. Publishes `PositionCommand` for sensors
+  4. Publishes `BB.Message.Actuator.BeginMotion` for sensors
 
-  ### Sensor
+  ### Open-loop position estimator
 
-  The sensor subscribes to actuator position commands and publishes `JointState`
-  messages. It provides:
+  Core's `BB.Sensor.OpenLoopPositionEstimator` subscribes to the actuator's
+  `BB.Message.Actuator.BeginMotion` messages and publishes `JointState` messages.
+  It provides:
   - Position interpolation during movement
   - Configurable publish rate (default 50Hz)
   - Periodic sync publishing even when idle (default every 5 seconds)
@@ -79,8 +84,10 @@ defmodule BB.Servo.PCA9685 do
 
   For robots with more than 16 servos, you can define multiple controllers:
 
-      controller :pca9685_a, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
-      controller :pca9685_b, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x41}
+      controllers do
+        controller :pca9685_a, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+        controller :pca9685_b, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x41}
+      end
 
       joint :shoulder, type: :revolute do
         actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_a}

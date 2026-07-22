@@ -49,7 +49,9 @@ with an open-loop estimator alongside it:
 defmodule MyRobot.Robot do
   use BB
 
-  controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  controllers do
+    controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  end
 
   topology do
     link :base do

@@ -37,7 +37,7 @@ end
 ## Requirements
 
 - PCA9685 PWM controller connected via I2C
-- BB framework (`~> 0.2`)
+- BB framework (`~> 0.20`)
 
 ## Usage
 
@@ -47,8 +47,10 @@ Define a controller and joints with servo actuators in your robot DSL:
 defmodule MyRobot do
   use BB
 
-  # Define the PCA9685 controller at robot level
-  controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  controllers do
+    # Define the PCA9685 controller at robot level
+    controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  end
 
   topology do
     link :base do
@@ -131,8 +133,8 @@ Define one controller per physical PCA9685 device.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `bus` | string | required | I2C bus name (e.g. "i2c-1") |
-| `address` | integer | 0x40 | I2C address of the PCA9685 |
-| `frequency` | integer | 50 | PWM frequency in Hz |
+| `address` | integer | required | I2C address of the PCA9685 (e.g. `0x40`) |
+| `pwm_freq` | integer | 50 | PWM frequency in Hz |
 | `oe_pin` | integer | nil | Optional output-enable GPIO pin |
 
 ### Actuator
@@ -147,7 +149,17 @@ Define one controller per physical PCA9685 device.
 | `controller` | atom | required | Name of the controller in robot registry |
 | `min_pulse` | integer | 500 | Minimum PWM pulse width (microseconds) |
 | `max_pulse` | integer | 2500 | Maximum PWM pulse width (microseconds) |
-| `reverse?` | boolean | false | Reverse rotation direction |
+
+To reverse a servo relative to its joint, configure the actuator's joint
+transmission rather than passing an actuator option:
+
+```elixir
+actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685} do
+  transmission do
+    reversed? true
+  end
+end
+```
 
 **Behaviour:**
 
