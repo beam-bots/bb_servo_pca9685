@@ -6,9 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 
 # Position Feedback
 
-RC servos don't provide position feedback, but `BB.Servo.PCA9685.Sensor` can
-estimate position based on commanded targets and timing. This tutorial shows you
-how to set up and use position feedback.
+RC servos don't provide position feedback, but core's
+`BB.Sensor.OpenLoopPositionEstimator` can estimate position based on commanded
+targets and timing. This tutorial shows you how to set up and use estimated
+position feedback.
 
 ## Prerequisites
 
@@ -34,7 +35,7 @@ defmodule MyRobot do
         limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(60 degree_per_second)
 
         actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Servo.PCA9685.Sensor, actuator: :servo}
+        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
 
         link :head do
         end
@@ -50,9 +51,9 @@ The sensor requires the `actuator` option to know which actuator to subscribe to
 
 Since RC servos don't report their actual position, the sensor estimates it:
 
-1. **Actuator publishes commands** - When you call `set_position`, the actuator
-   publishes a `PositionCommand` message with the target angle and expected
-   arrival time
+1. **Actuator publishes motion** - When you call `set_position`, the actuator
+   publishes a `BB.Message.Actuator.BeginMotion` message with the initial and
+   target positions and expected arrival time
 
 2. **Sensor subscribes** - The sensor receives these messages and tracks the
    target position and expected arrival time
@@ -80,7 +81,7 @@ Time 5000ms: Sync publish at 45° (max_silence reached)
 ## Sensor Options
 
 ```elixir
-sensor :feedback, {BB.Servo.PCA9685.Sensor,
+sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator,
   actuator: :servo,           # Required: actuator to subscribe to
   publish_rate: ~u(50 hertz), # Optional: how often to check for changes (default: 50 Hz)
   max_silence: ~u(5 second)   # Optional: max time between publishes (default: 5s)
@@ -269,15 +270,12 @@ For applications requiring precise position feedback, consider:
 - Using a servo with built-in feedback (smart servos)
 - Using stepper motors with encoders
 
-## Comparison with BB.Servo.Pigpio
+## Using the estimator with other servo drivers
 
-The sensor works identically to `BB.Servo.Pigpio.Sensor`. If you're migrating
-from pigpio to PCA9685, simply:
-
-1. Replace `BB.Servo.Pigpio.Sensor` with `BB.Servo.PCA9685.Sensor`
-2. Ensure the `actuator` option points to a PCA9685 actuator
-
-The message types and behaviour are the same.
+`BB.Sensor.OpenLoopPositionEstimator` is a core BB sensor rather than a
+driver-specific module. When changing servo drivers, keep the estimator and
+make sure its `actuator` option names the replacement actuator. Any compatible
+actuator that publishes `BB.Message.Actuator.BeginMotion` can use it.
 
 ## Next Steps
 

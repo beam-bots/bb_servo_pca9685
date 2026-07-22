@@ -82,7 +82,9 @@ BB.Actuator.set_position!(MyRobot, :servo, 0.5)
 defmodule MyRobot do
   use BB
 
-  controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  controllers do
+    controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  end
 
   topology do
     link :base do

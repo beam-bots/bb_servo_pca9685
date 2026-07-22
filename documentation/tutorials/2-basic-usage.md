@@ -61,14 +61,14 @@ The controller manages the I2C connection to the PCA9685:
 ```elixir
 controller :pca9685, {BB.Servo.PCA9685.Controller,
   bus: "i2c-1",         # Required: I2C bus name
-  address: 0x40,        # Required: I2C address (default for PCA9685)
+  address: 0x40,        # Required: I2C address; 0x40 is common for an unmodified board
   pwm_freq: 50,         # Optional: PWM frequency in Hz (default: 50)
   oe_pin: 25            # Optional: GPIO pin for output enable
 }
 ```
 
 - `bus` - The I2C bus device name (usually `"i2c-1"` on Raspberry Pi)
-- `address` - The I2C address of the PCA9685 (default `0x40`)
+- `address` - The required I2C address of the PCA9685 (often `0x40`)
 - `pwm_freq` - PWM frequency, 50 Hz is standard for servos
 - `oe_pin` - Optional GPIO pin connected to the PCA9685's OE (Output Enable) pin
 
@@ -94,8 +94,7 @@ actuator :servo, {BB.Servo.PCA9685.Actuator,
   channel: 0,          # Required: PCA9685 channel (0-15)
   controller: :pca9685, # Required: name of the controller
   min_pulse: 500,      # Optional: minimum pulse width in µs (default: 500)
-  max_pulse: 2500,     # Optional: maximum pulse width in µs (default: 2500)
-  reverse?: false      # Optional: reverse rotation direction (default: false)
+  max_pulse: 2500      # Optional: maximum pulse width in µs (default: 2500)
 }
 ```
 
@@ -159,20 +158,22 @@ BB.Actuator.set_position(MyRobot, :servo, 3.14)  # Requested: 180°, actual: 90�
 
 ## Reversing Direction
 
-If your servo rotates in the opposite direction to what you expect, use the
-`reverse?` option:
+If your servo rotates in the opposite direction to the joint, reverse the
+actuator's joint transmission:
 
 ```elixir
 actuator :servo, {BB.Servo.PCA9685.Actuator,
   channel: 0,
-  controller: :pca9685,
-  reverse?: true
-}
+  controller: :pca9685
+} do
+  transmission do
+    reversed? true
+  end
+end
 ```
 
-This inverts the PWM mapping so that:
-- Lower limit → maximum pulse
-- Upper limit → minimum pulse
+The driver continues to map motor-space limits to PWM pulse widths; the
+transmission reverses the mapping between joint space and motor space.
 
 ## Example: Pan-Tilt Head
 
@@ -272,7 +273,7 @@ defmodule BigRobot do
   use BB.Robot
 
   robot do
-    # First board at default address
+    # First board at its unmodified hardware address
     controller :pca9685_a, {BB.Servo.PCA9685.Controller,
       bus: "i2c-1",
       address: 0x40

@@ -14,11 +14,13 @@ defmodule BB.Servo.PCA9685.Controller do
 
   The controller is typically defined in the robot DSL:
 
-      controller :pca9685, {BB.Servo.PCA9685.Controller,
-        bus: "i2c-1",
-        address: 0x40,
-        pwm_freq: 50
-      }
+      controllers do
+        controller :pca9685, {BB.Servo.PCA9685.Controller,
+          bus: "i2c-1",
+          address: 0x40,
+          pwm_freq: 50
+        }
+      end
 
   ## Options
 

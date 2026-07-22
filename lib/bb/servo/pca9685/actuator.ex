@@ -24,7 +24,9 @@ defmodule BB.Servo.PCA9685.Actuator do
 
   ## Example DSL Usage
 
-      controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+      controllers do
+        controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+      end
 
       joint :shoulder, type: :revolute do
         limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
