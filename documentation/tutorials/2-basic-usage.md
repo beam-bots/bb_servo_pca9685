@@ -21,36 +21,53 @@ Create a robot module with a controller and servo-controlled joints:
 
 ```elixir
 defmodule MyRobot do
-  use BB.Robot
+  use BB
 
-  robot do
-    # Define the PCA9685 controller
-    controller :pca9685, {BB.Servo.PCA9685.Controller,
-      bus: "i2c-1",
-      address: 0x40
-    }
+  controllers do
+    controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  end
 
+  commands do
+    command :arm do
+      handler BB.Command.Arm
+      allowed_states [:disarmed]
+    end
+
+    command :disarm do
+      handler BB.Command.Disarm
+      allowed_states [:idle]
+    end
+  end
+
+  topology do
     link :base do
-      joint :pan, type: :revolute do
-        # Define the joint's motion limits
+      joint :pan do
+        type :revolute
+
         limit lower: ~u(-90 degree),
               upper: ~u(90 degree),
+              effort: ~u(1 newton_meter),
               velocity: ~u(60 degree_per_second)
 
-        # Attach the servo actuator on channel 0
-        actuator :servo, {BB.Servo.PCA9685.Actuator,
-          channel: 0,
-          controller: :pca9685
-        }
+        actuator :pan_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
 
-        link :head do
-          # Child links go here
-        end
+        link :head
       end
     end
   end
 end
 ```
+
+Three sections do the work. `controllers` holds robot-level components — one
+entry per physical PCA9685 board. `topology` describes the physical structure as
+a tree of links and joints, with each servo attached as an `actuator` inside its
+joint. `commands` declares the arm and disarm commands; a robot starts
+`:disarmed` and won't move until armed, so a robot without them can't be
+commanded at all.
+
+Component names must be unique across the whole robot — BB registers every
+process under its name. That's why the actuator is `:pan_servo` rather than
+`:servo`: the moment you add a second joint, a second `:servo` fails to compile.
 
 ## Understanding the Configuration
 
@@ -74,23 +91,29 @@ controller :pca9685, {BB.Servo.PCA9685.Controller,
 
 ### Joint Limits
 
-The `limit` block defines the physical constraints of your joint:
+The `limit` entity defines the physical constraints of your joint:
 
+- `effort` - Maximum force or torque (**required**)
+- `velocity` - Maximum rotation speed (**required**, used for timing calculations)
 - `lower` - Minimum position (maps to servo's minimum pulse)
 - `upper` - Maximum position (maps to servo's maximum pulse)
-- `velocity` - Maximum rotation speed (used for timing calculations)
+- `acceleration` - Maximum acceleration; when omitted, motion timing assumes a
+  rectangular velocity profile
 
 These values are used by the actuator to:
 1. Map positions to PWM pulse widths
 2. Clamp commanded positions to safe values
 3. Calculate expected movement duration
 
+An RC servo won't report or obey a torque limit, but `effort` is required on
+every joint, so give it a figure from the servo's datasheet.
+
 ### Actuator Options
 
 The actuator controls a single servo channel:
 
 ```elixir
-actuator :servo, {BB.Servo.PCA9685.Actuator,
+actuator :pan_servo, {BB.Servo.PCA9685.Actuator,
   channel: 0,          # Required: PCA9685 channel (0-15)
   controller: :pca9685, # Required: name of the controller
   min_pulse: 500,      # Optional: minimum pulse width in µs (default: 500)
@@ -127,24 +150,78 @@ iex> MyRobot.start_link()
 {:ok, #PID<0.123.0>}
 ```
 
+To try the robot without any hardware attached, start it in simulation:
+
+```elixir
+iex> MyRobot.start_link(simulation: :kinematic)
+{:ok, #PID<0.123.0>}
+```
+
+Controllers default to `simulation: :omit`, so the real PCA9685 controller does
+not start and no I2C traffic happens. Actuators are swapped for
+`BB.Sim.Actuator`, and the open-loop position estimator from
+[Position Feedback](3-position-feedback.md) works unchanged.
+
+## Arming the Robot
+
+A robot starts `:disarmed` and will not move. Arming is a command, not a flag —
+run it and wait for the result:
+
+```elixir
+iex> {:ok, command} = MyRobot.arm()
+{:ok, #PID<0.234.0>}
+
+iex> BB.Command.await(command)
+{:ok, :armed, [next_state: :idle]}
+```
+
+Each command you declare in the `commands` section becomes a function on the
+robot module. Disarming works the same way, and pulls the PCA9685's OE pin high
+if you've wired one:
+
+```elixir
+iex> {:ok, command} = MyRobot.disarm()
+iex> BB.Command.await(command)
+{:ok, :disarmed, [next_state: :disarmed]}
+```
+
+Drive safety state through these commands rather than calling `BB.Safety`
+directly — going through the command system is what runs a robot's prearm
+checks.
+
 ## Commanding the Servo
 
-Send position commands to the actuator:
+With the robot armed, send position commands by actuator name. Use
+`set_position!/4` to fire and forget, or `set_position_sync/5` when you want the
+actuator to acknowledge:
 
 ```elixir
 # Move to centre (0 degrees)
-BB.Actuator.set_position(MyRobot, :servo, 0.0)
+BB.Actuator.set_position!(MyRobot, :pan_servo, 0.0)
 
 # Move to -45 degrees (in radians)
-BB.Actuator.set_position(MyRobot, :servo, -0.785)
+BB.Actuator.set_position!(MyRobot, :pan_servo, -0.785)
+
+# Wait for acknowledgement
+{:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot, :pan_servo, -0.785)
 
 # Using the unit sigil for degrees
 import BB.Unit
-BB.Actuator.set_position(MyRobot, :servo, ~u(-45 degree) |> BB.Robot.Units.to_radians())
+BB.Actuator.set_position!(MyRobot, :pan_servo, BB.Robot.Units.to_radians(~u(-45 degree)))
 ```
 
-> **Note:** BB uses radians internally. Convert degrees to radians when sending
-> commands, or use the unit conversion functions.
+> **Note:** The DSL takes `~u` sigil values, but the runtime command functions
+> take plain numbers in SI base units — radians here. Convert with
+> `BB.Robot.Units.to_radians/1`.
+
+You command joints in **joint-space**. BB applies the joint's transmission and
+hands this driver motor-space values, so the driver never does joint-to-motor
+maths.
+
+> **On `BB.Actuator.set_position/4`:** the by-path pubsub variant is not
+> currently delivered to this driver — nothing subscribes the actuator to its
+> command topic, so the message is published and dropped. Use the name-based
+> `set_position!/4` and `set_position_sync/5` shown above.
 
 ## Position Clamping
 
@@ -153,7 +230,7 @@ The actuator automatically clamps positions to the joint limits:
 ```elixir
 # Joint limits are -90° to +90°
 # This command will be clamped to +90° (π/2 radians)
-BB.Actuator.set_position(MyRobot, :servo, 3.14)  # Requested: 180°, actual: 90°
+BB.Actuator.set_position!(MyRobot, :pan_servo, 3.14)  # Requested: 180°, actual: 90°
 ```
 
 ## Reversing Direction
@@ -162,7 +239,7 @@ If your servo rotates in the opposite direction to the joint, reverse the
 actuator's joint transmission:
 
 ```elixir
-actuator :servo, {BB.Servo.PCA9685.Actuator,
+actuator :pan_servo, {BB.Servo.PCA9685.Actuator,
   channel: 0,
   controller: :pca9685
 } do
@@ -181,27 +258,48 @@ Here's a complete example with two servos for a pan-tilt mechanism:
 
 ```elixir
 defmodule PanTiltRobot do
-  use BB.Robot
+  use BB
 
-  robot do
-    controller :pca9685, {BB.Servo.PCA9685.Controller,
-      bus: "i2c-1",
-      address: 0x40
-    }
+  controllers do
+    controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  end
 
+  commands do
+    command :arm do
+      handler BB.Command.Arm
+      allowed_states [:disarmed]
+    end
+
+    command :disarm do
+      handler BB.Command.Disarm
+      allowed_states [:idle]
+    end
+  end
+
+  topology do
     link :base do
-      joint :pan, type: :revolute do
-        limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(90 degree_per_second)
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+      joint :pan do
+        type :revolute
+
+        limit lower: ~u(-90 degree),
+              upper: ~u(90 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(90 degree_per_second)
+
+        actuator :pan_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
 
         link :pan_platform do
-          joint :tilt, type: :revolute do
-            limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
-            actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
+          joint :tilt do
+            type :revolute
 
-            link :camera_mount do
-              # Camera attached here
-            end
+            limit lower: ~u(-45 degree),
+                  upper: ~u(45 degree),
+                  effort: ~u(1 newton_meter),
+                  velocity: ~u(60 degree_per_second)
+
+            actuator :tilt_servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
+
+            link :camera_mount
           end
         end
       end
@@ -210,12 +308,18 @@ defmodule PanTiltRobot do
 end
 ```
 
+Note that each servo has its own name. Naming both `:servo` is the most common
+way to get a compile error here — names are global, not scoped to their joint.
+
 Command both servos:
 
 ```elixir
+{:ok, command} = PanTiltRobot.arm()
+{:ok, :armed, _} = BB.Command.await(command)
+
 # Look left and up
-BB.Actuator.set_position(PanTiltRobot, :pan, -0.785)   # -45°
-BB.Actuator.set_position(PanTiltRobot, :tilt, 0.524)   # +30°
+BB.Actuator.set_position!(PanTiltRobot, :pan_servo, -0.785)   # -45°
+BB.Actuator.set_position!(PanTiltRobot, :tilt_servo, 0.524)   # +30°
 ```
 
 ## Example: Hexapod Leg (6 Servos)
@@ -224,32 +328,71 @@ The PCA9685's 16 channels make it ideal for multi-servo robots:
 
 ```elixir
 defmodule HexapodLeg do
-  use BB.Robot
+  use BB
 
-  robot do
-    controller :pca9685, {BB.Servo.PCA9685.Controller,
-      bus: "i2c-1",
-      address: 0x40
-    }
+  controllers do
+    controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  end
 
+  commands do
+    command :arm do
+      handler BB.Command.Arm
+      allowed_states [:disarmed]
+    end
+
+    command :disarm do
+      handler BB.Command.Disarm
+      allowed_states [:idle]
+    end
+  end
+
+  topology do
     link :body do
       # Leg 1
-      joint :leg1_coxa, type: :revolute do
-        limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(90 degree_per_second)
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+      joint :leg1_coxa do
+        type :revolute
+
+        limit lower: ~u(-45 degree),
+              upper: ~u(45 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(90 degree_per_second)
+
+        actuator :leg1_coxa_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+
+        sensor :leg1_coxa_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :leg1_coxa_servo}
 
         link :leg1_coxa_link do
-          joint :leg1_femur, type: :revolute do
-            limit lower: ~u(-90 degree), upper: ~u(30 degree), velocity: ~u(90 degree_per_second)
-            actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
+          joint :leg1_femur do
+            type :revolute
+
+            limit lower: ~u(-90 degree),
+                  upper: ~u(30 degree),
+                  effort: ~u(1 newton_meter),
+                  velocity: ~u(90 degree_per_second)
+
+            actuator :leg1_femur_servo,
+                     {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
+
+            sensor :leg1_femur_feedback,
+                   {BB.Sensor.OpenLoopPositionEstimator, actuator: :leg1_femur_servo}
 
             link :leg1_femur_link do
-              joint :leg1_tibia, type: :revolute do
-                limit lower: ~u(-120 degree), upper: ~u(0 degree), velocity: ~u(90 degree_per_second)
-                actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 2, controller: :pca9685}
+              joint :leg1_tibia do
+                type :revolute
 
-                link :leg1_foot do
-                end
+                limit lower: ~u(-120 degree),
+                      upper: ~u(0 degree),
+                      effort: ~u(1 newton_meter),
+                      velocity: ~u(90 degree_per_second)
+
+                actuator :leg1_tibia_servo,
+                         {BB.Servo.PCA9685.Actuator, channel: 2, controller: :pca9685}
+
+                sensor :leg1_tibia_feedback,
+                       {BB.Sensor.OpenLoopPositionEstimator, actuator: :leg1_tibia_servo}
+
+                link :leg1_foot
               end
             end
           end
@@ -264,45 +407,73 @@ defmodule HexapodLeg do
 end
 ```
 
+With sixteen channels to name, a `<leg>_<segment>_servo` convention keeps every
+actuator name unique without much thought.
+
 ## Multiple PCA9685 Boards
 
 For robots with more than 16 servos, define multiple controllers:
 
 ```elixir
 defmodule BigRobot do
-  use BB.Robot
+  use BB
 
-  robot do
+  controllers do
     # First board at its unmodified hardware address
-    controller :pca9685_a, {BB.Servo.PCA9685.Controller,
-      bus: "i2c-1",
-      address: 0x40
-    }
+    controller :pca9685_a, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
 
     # Second board with A0 jumper set
-    controller :pca9685_b, {BB.Servo.PCA9685.Controller,
-      bus: "i2c-1",
-      address: 0x41
-    }
+    controller :pca9685_b, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x41}
+  end
 
+  commands do
+    command :arm do
+      handler BB.Command.Arm
+      allowed_states [:disarmed]
+    end
+
+    command :disarm do
+      handler BB.Command.Disarm
+      allowed_states [:idle]
+    end
+  end
+
+  topology do
     link :base do
       # First 16 servos use :pca9685_a
-      joint :joint_0, type: :revolute do
-        limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(60 degree_per_second)
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_a}
-        link :link_0 do end
+      joint :joint_0 do
+        type :revolute
+
+        limit lower: ~u(-90 degree),
+              upper: ~u(90 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(60 degree_per_second)
+
+        actuator :servo_0, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_a}
+
+        link :link_0
       end
 
       # Servos 17+ use :pca9685_b
-      joint :joint_16, type: :revolute do
-        limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(60 degree_per_second)
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_b}
-        link :link_16 do end
+      joint :joint_16 do
+        type :revolute
+
+        limit lower: ~u(-90 degree),
+              upper: ~u(90 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(60 degree_per_second)
+
+        actuator :servo_16, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_b}
+
+        link :link_16
       end
     end
   end
 end
 ```
+
+Both actuators sit on channel 0 — of different boards. It's the `controller:`
+option that picks the board, and the actuator names that must differ.
 
 ## Output Enable Control
 
@@ -327,10 +498,19 @@ BB.Process.call(MyRobot, :pca9685, :output_disable)
 BB.Process.call(MyRobot, :pca9685, :output_enable)
 ```
 
+Without an `oe_pin` configured, both calls return
+`{:error, %BB.Error.Hardware.NoOutputEnablePin{}}`.
+
 This is useful for:
 - Emergency stops
 - Allowing manual positioning of servos
 - Reducing power consumption when idle
+
+Disarming pulls OE high for you, and a clean controller shutdown does the same
+in the device's `terminate/2`. That makes `oe_pin` the only kill that survives a
+dead controller process — both the actuator's disarm and the controller's own
+route through the live controller, so if it has crashed, the disarm fails and
+the robot enters `:error`.
 
 ## Next Steps
 

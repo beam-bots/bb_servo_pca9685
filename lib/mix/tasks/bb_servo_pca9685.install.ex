@@ -86,12 +86,23 @@ if Code.ensure_loaded?(Igniter) do
       """
       bb_servo_pca9685: add actuators/sensors to your joints. Example:
 
-          joint :shoulder, type: :revolute do
-            limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
+          joint :shoulder do
+            type :revolute
 
-            actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :#{controller_name}}
-            sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+            limit lower: ~u(-45 degree),
+                  upper: ~u(45 degree),
+                  effort: ~u(1 newton_meter),
+                  velocity: ~u(60 degree_per_second)
+
+            actuator :shoulder_servo,
+                     {BB.Servo.PCA9685.Actuator, channel: 0, controller: :#{controller_name}}
+
+            sensor :shoulder_feedback,
+                   {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
           end
+
+      Component names are unique robot-wide, so give each joint's servo and
+      estimator their own names.
       """
     end
   end

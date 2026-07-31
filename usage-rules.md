@@ -55,11 +55,18 @@ defmodule MyRobot.Robot do
 
   topology do
     link :base do
-      joint :shoulder, type: :revolute do
-        limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
+      joint :shoulder do
+        type :revolute
 
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+        limit lower: ~u(-45 degree),
+              upper: ~u(45 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(60 degree_per_second)
+
+        actuator :shoulder_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+
+        sensor :shoulder_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
       end
     end
   end
@@ -70,8 +77,8 @@ Command it with `BB.Actuator` once the robot is armed (values are joint-space
 radians; BB applies the joint transmission before the driver sees motor-space):
 
 ```elixir
-BB.Actuator.set_position(MyRobot.Robot, [:shoulder, :servo], ~u(30 degree) |> Localize.Unit.to_base())
-BB.Actuator.set_position!(MyRobot.Robot, :servo, 0.5)
+BB.Actuator.set_position!(MyRobot.Robot, :shoulder_servo, 0.5)
+{:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot.Robot, :shoulder_servo, 0.5)
 ```
 
 ## Options
@@ -109,6 +116,13 @@ BB.Actuator.set_position!(MyRobot.Robot, :servo, 0.5)
   to `simulation: :omit`, so the real PCA9685 controller does not start; set
   `simulation: :mock` or `:start` on the entry if you need it. Actuators are
   swapped for `BB.Sim.Actuator` and the open-loop estimator works unchanged.
+- **Don't command this driver with `BB.Actuator.set_position/4`.** The by-path
+  pubsub variant is not delivered — nothing subscribes the actuator to
+  `[:actuator | path]`, so the message is published and dropped. Use
+  `set_position!/4` or `set_position_sync/5`, which address the process directly.
+- **Don't reuse a component name across joints.** Names are unique robot-wide,
+  not scoped to their joint, so `:servo` on two joints fails to compile. Name
+  them after the joint (`:shoulder_servo`, `:elbow_servo`).
 
 ## Further reading
 

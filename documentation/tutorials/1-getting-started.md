@@ -148,8 +148,8 @@ Add `bb_servo_pca9685` to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bb, "~> 0.2"},
-    {:bb_servo_pca9685, "~> 0.1"}
+    {:bb, "~> 0.20"},
+    {:bb_servo_pca9685, "~> 0.6"}
   ]
 end
 ```
