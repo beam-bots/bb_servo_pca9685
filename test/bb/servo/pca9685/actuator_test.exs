@@ -21,7 +21,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
       [position: position * 1.0]
       |> maybe_add_opt(:command_id, opts[:command_id])
 
-    {:command, Message.new!(Command.Position, @joint_name, message_opts)}
+    Message.new!(Command.Position, @joint_name, message_opts)
   end
 
   defp maybe_add_opt(opts, _key, nil), do: opts
@@ -196,7 +196,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast(position_command(-1.0), state)
+      Actuator.handle_command(position_command(-1.0), state)
 
       assert_receive {:pulse, 500}
     end
@@ -209,7 +209,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast(position_command(1.0), state)
+      Actuator.handle_command(position_command(1.0), state)
 
       assert_receive {:pulse, 2500}
     end
@@ -222,7 +222,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast(position_command(0.0), state)
+      Actuator.handle_command(position_command(0.0), state)
 
       assert_receive {:pulse, 1500}
     end
@@ -254,7 +254,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast(position_command(-5.0), state)
+      Actuator.handle_command(position_command(-5.0), state)
 
       assert_receive {:pulse, 500}
     end
@@ -267,7 +267,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast(position_command(5.0), state)
+      Actuator.handle_command(position_command(5.0), state)
 
       assert_receive {:pulse, 2500}
     end
@@ -297,7 +297,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      Actuator.handle_cast(position_command(0.5), state)
+      Actuator.handle_command(position_command(0.5), state)
 
       assert_receive {:published, TestRobot, [@joint_name, @actuator_name], opts}
 
@@ -316,7 +316,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
       end)
 
       before = System.monotonic_time(:millisecond)
-      Actuator.handle_cast(position_command(1.0), state)
+      Actuator.handle_command(position_command(1.0), state)
 
       assert_receive {:arrival, expected_arrival}
 
@@ -349,7 +349,7 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
         :ok
       end)
 
-      assert {:noreply, new_state} = Actuator.handle_cast(position_command(0), state)
+      assert {:noreply, new_state} = Actuator.handle_command(position_command(0), state)
       assert new_state.current_motor_angle == 0.0
 
       assert_receive :called
