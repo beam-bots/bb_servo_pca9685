@@ -191,13 +191,13 @@ checks.
 
 ## Commanding the Servo
 
-With the robot armed, send position commands by actuator name. Use
-`set_position!/4` to fire and forget, or `set_position_sync/5` when you want the
-actuator to acknowledge:
+With the robot armed, send position commands by actuator name. `set_position/4`
+publishes via pubsub, `set_position!/4` fires and forgets, and
+`set_position_sync/5` waits for the actuator to acknowledge:
 
 ```elixir
 # Move to centre (0 degrees)
-BB.Actuator.set_position!(MyRobot, :pan_servo, 0.0)
+BB.Actuator.set_position(MyRobot, :pan_servo, 0.0)
 
 # Move to -45 degrees (in radians)
 BB.Actuator.set_position!(MyRobot, :pan_servo, -0.785)
@@ -218,10 +218,10 @@ You command joints in **joint-space**. BB applies the joint's transmission and
 hands this driver motor-space values, so the driver never does joint-to-motor
 maths.
 
-> **On `BB.Actuator.set_position/4`:** the by-path pubsub variant is not
-> currently delivered to this driver — nothing subscribes the actuator to its
-> command topic, so the message is published and dropped. Use the name-based
-> `set_position!/4` and `set_position_sync/5` shown above.
+All three take either the actuator's unique name or its full path through the
+topology (`[:base, :pan, :pan_servo]` here), and all three arrive at the
+driver's `handle_command/2` — which transport you chose isn't something the
+driver can see.
 
 ## Position Clamping
 

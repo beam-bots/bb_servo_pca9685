@@ -98,10 +98,13 @@ need to specify servo rotation range or speed separately.
 
 ## Sending Commands
 
-Use the `BB.Actuator` module to send commands to servos. Three delivery methods
-are available:
+Use the `BB.Actuator` module to send commands to servos. The robot must be armed
+first — a disarmed robot will not move, and as of bb 0.23 the framework refuses
+the command before it reaches the driver.
 
-The robot must be armed first — a disarmed robot will not move.
+Three transports are available. They differ only in delivery: all three arrive
+at the driver's `handle_command/2`, and each takes either the actuator's unique
+name or its full path through the topology.
 
 ### Direct Delivery (for time-critical control)
 
@@ -129,14 +132,11 @@ addressing the process directly, which is what makes logging, replay and
 multi-subscriber patterns possible:
 
 ```elixir
-BB.Actuator.set_position(MyRobot, [:base, :shoulder, :shoulder_servo], 0.5,
-  command_id: make_ref()
-)
-```
+BB.Actuator.set_position(MyRobot, :shoulder_servo, 0.5, command_id: make_ref())
 
-This driver does not currently receive commands sent this way — nothing
-subscribes the actuator to its command topic, so the message is published and
-dropped. Use the name-based functions above until that's resolved upstream.
+# Or by full path
+BB.Actuator.set_position(MyRobot, [:base, :shoulder, :shoulder_servo], 0.5)
+```
 
 ## Components
 

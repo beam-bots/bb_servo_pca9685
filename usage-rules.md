@@ -67,6 +67,9 @@ defmodule MyRobot.Robot do
 
         sensor :shoulder_feedback,
                {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
+
+        link :upper_arm do
+        end
       end
     end
   end
@@ -77,6 +80,7 @@ Command it with `BB.Actuator` once the robot is armed (values are joint-space
 radians; BB applies the joint transmission before the driver sees motor-space):
 
 ```elixir
+BB.Actuator.set_position(MyRobot.Robot, :shoulder_servo, 0.5)
 BB.Actuator.set_position!(MyRobot.Robot, :shoulder_servo, 0.5)
 {:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot.Robot, :shoulder_servo, 0.5)
 ```
@@ -116,10 +120,10 @@ BB.Actuator.set_position!(MyRobot.Robot, :shoulder_servo, 0.5)
   to `simulation: :omit`, so the real PCA9685 controller does not start; set
   `simulation: :mock` or `:start` on the entry if you need it. Actuators are
   swapped for `BB.Sim.Actuator` and the open-loop estimator works unchanged.
-- **Don't command this driver with `BB.Actuator.set_position/4`.** The by-path
-  pubsub variant is not delivered — nothing subscribes the actuator to
-  `[:actuator | path]`, so the message is published and dropped. Use
-  `set_position!/4` or `set_position_sync/5`, which address the process directly.
+- **Address the actuator by name or by full path, never a partial one.** All
+  three transports accept either, and a name is resolved for you. A partial
+  path like `[:shoulder, :servo]` matches no subscriber, so the command is
+  published and dropped.
 - **Don't reuse a component name across joints.** Names are unique robot-wide,
   not scoped to their joint, so `:servo` on two joints fails to compile. Name
   them after the joint (`:shoulder_servo`, `:elbow_servo`).
