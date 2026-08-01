@@ -22,23 +22,38 @@ Add the sensor to your joint definition:
 
 ```elixir
 defmodule MyRobot do
-  use BB.Robot
+  use BB
 
-  robot do
-    controller :pca9685, {BB.Servo.PCA9685.Controller,
-      bus: "i2c-1",
-      address: 0x40
-    }
+  controllers do
+    controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
+  end
 
+  commands do
+    command :arm do
+      handler BB.Command.Arm
+      allowed_states [:disarmed]
+    end
+
+    command :disarm do
+      handler BB.Command.Disarm
+      allowed_states [:idle]
+    end
+  end
+
+  topology do
     link :base do
-      joint :pan, type: :revolute do
-        limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(60 degree_per_second)
+      joint :pan do
+        type :revolute
 
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+        limit lower: ~u(-90 degree),
+              upper: ~u(90 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(60 degree_per_second)
 
-        link :head do
-        end
+        actuator :pan_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+        sensor :pan_feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :pan_servo}
+
+        link :head
       end
     end
   end
@@ -47,11 +62,15 @@ end
 
 The sensor requires the `actuator` option to know which actuator to subscribe to.
 
+> **Under simulation only**, BB adds an estimator for any actuator that doesn't
+> already have one, named `:<actuator>_position_estimator`. On real hardware you
+> declare it yourself, as above.
+
 ## How Position Feedback Works
 
 Since RC servos don't report their actual position, the sensor estimates it:
 
-1. **Actuator publishes motion** - When you call `set_position`, the actuator
+1. **Actuator publishes motion** - When you command a position, the actuator
    publishes a `BB.Message.Actuator.BeginMotion` message with the initial and
    target positions and expected arrival time
 
@@ -81,8 +100,8 @@ Time 5000ms: Sync publish at 45° (max_silence reached)
 ## Sensor Options
 
 ```elixir
-sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator,
-  actuator: :servo,           # Required: actuator to subscribe to
+sensor :pan_feedback, {BB.Sensor.OpenLoopPositionEstimator,
+  actuator: :pan_servo,       # Required: actuator to subscribe to
   publish_rate: ~u(50 hertz), # Optional: how often to check for changes (default: 50 Hz)
   max_silence: ~u(5 second)   # Optional: max time between publishes (default: 5s)
 }
@@ -114,25 +133,41 @@ Subscribe to the sensor's JointState messages:
 
 ```elixir
 # Subscribe to the sensor topic
-BB.subscribe(MyRobot, [:sensor, :pan, :feedback])
+BB.subscribe(MyRobot, [:sensor, :base, :pan, :pan_feedback])
 
 # In your GenServer or process
-def handle_info(%BB.Message{payload: %BB.Message.Sensor.JointState{} = joint_state}, state) do
+def handle_info({:bb, _path, %BB.Message{payload: %BB.Message.Sensor.JointState{} = joint_state}}, state) do
   [position] = joint_state.positions
   IO.puts("Pan position: #{position} radians")
   {:noreply, state}
 end
 ```
 
+Two things to get right here.
+
+**The topic is the component's full path through the topology** — link, then
+joint, then sensor. `[:sensor, :pan, :pan_feedback]` looks plausible but matches
+nothing, because it omits the `:base` link. Paths are hierarchical, so you can
+subscribe to any prefix to get a whole subtree: `[:sensor, :base]` catches every
+sensor below the base link, and `[:sensor]` catches all of them.
+
+**Messages arrive wrapped in a three-element tuple**, `{:bb, path, %BB.Message{}}`,
+not as a bare `%BB.Message{}`. The `path` tells you which component published,
+which matters once you're subscribed to a subtree rather than one sensor.
+
 ## Reading Current Position
 
-You can also query the robot's state directly:
+You can also ask the runtime, which keeps a live map of joint positions built
+from these same messages:
 
 ```elixir
-# Get current joint positions
-state = BB.Robot.State.get(MyRobot)
-pan_position = BB.Robot.State.get_joint_position(state, :pan)
+iex> BB.Robot.Runtime.positions(MyRobot)
+%{pan: 0.7853981633974483}
 ```
+
+`BB.Robot.Runtime.velocities/1` returns the same shape for velocities. Both read
+straight from ETS, so they're cheap to call from anywhere and don't block on the
+sensor.
 
 ## Example: Position Logger
 
@@ -147,11 +182,11 @@ defmodule PositionLogger do
   end
 
   def init(robot) do
-    BB.subscribe(robot, [:sensor, :pan, :feedback])
+    BB.subscribe(robot, [:sensor, :base, :pan, :pan_feedback])
     {:ok, %{robot: robot}}
   end
 
-  def handle_info(%BB.Message{payload: %BB.Message.Sensor.JointState{} = js}, state) do
+  def handle_info({:bb, _path, %BB.Message{payload: %BB.Message.Sensor.JointState{} = js}}, state) do
     [position] = js.positions
     degrees = position * 180 / :math.pi()
     IO.puts("[#{DateTime.utc_now()}] Pan: #{Float.round(degrees, 1)}°")
@@ -166,8 +201,11 @@ Start the logger:
 {:ok, _} = MyRobot.start_link()
 {:ok, _} = PositionLogger.start_link(MyRobot)
 
+{:ok, command} = MyRobot.arm()
+{:ok, :armed, _} = BB.Command.await(command)
+
 # Move the servo and watch the logs
-BB.Actuator.set_position(MyRobot, :servo, 0.785)
+BB.Actuator.set_position!(MyRobot, :pan_servo, 0.785)
 # Output:
 # [2025-01-15 10:30:00.000000Z] Pan: 9.0°
 # [2025-01-15 10:30:00.020000Z] Pan: 18.0°
@@ -182,22 +220,22 @@ Wait for the servo to reach its target position:
 
 ```elixir
 defmodule ServoHelper do
-  def move_and_wait(robot, actuator, target, timeout \\ 5000) do
-    # Subscribe to sensor updates
-    BB.subscribe(robot, [:sensor, :pan, :feedback])
+  def move_and_wait(robot, sensor_path, actuator, target, timeout \\ 5000) do
+    BB.subscribe(robot, sensor_path)
 
-    # Send the command
-    BB.Actuator.set_position(robot, actuator, target)
+    BB.Actuator.set_position!(robot, actuator, target)
 
-    # Wait for position to match target
     wait_for_position(target, timeout)
   end
 
   defp wait_for_position(target, timeout) do
     receive do
-      %BB.Message{payload: %BB.Message.Sensor.JointState{positions: [position]}}
-      when abs(position - target) < 0.01 ->
-        :ok
+      {:bb, _path, %BB.Message{payload: %BB.Message.Sensor.JointState{positions: [position]}}} ->
+        if abs(position - target) < 0.01 do
+          :ok
+        else
+          wait_for_position(target, timeout)
+        end
     after
       timeout -> {:error, :timeout}
     end
@@ -205,9 +243,16 @@ defmodule ServoHelper do
 end
 
 # Usage
-:ok = ServoHelper.move_and_wait(MyRobot, :servo, 0.785)
+:ok = ServoHelper.move_and_wait(MyRobot, [:sensor, :base, :pan, :pan_feedback], :pan_servo, 0.785)
 IO.puts("Servo reached target!")
 ```
+
+The proximity test belongs in the body rather than in a guard on the `receive`
+clause. A guard would leave every interpolated position sitting unmatched in the
+mailbox, to be re-scanned on each subsequent `receive`.
+
+> The timeout restarts on each message rather than bounding total wait. Track a
+> deadline with `System.monotonic_time/1` if you need a hard ceiling.
 
 ## Example: Multi-Joint Position Monitor
 
@@ -224,20 +269,17 @@ defmodule LegMonitor do
   end
 
   def init(robot) do
-    # Subscribe to all leg joint sensors
-    for joint <- @joints do
-      BB.subscribe(robot, [:sensor, joint, :feedback])
-    end
+    # One subscription covers every sensor below the body link
+    BB.subscribe(robot, [:sensor, :body])
 
     {:ok, %{robot: robot, positions: %{}}}
   end
 
-  def handle_info(%BB.Message{frame_id: joint, payload: %BB.Message.Sensor.JointState{} = js}, state) do
-    [position] = js.positions
-    positions = Map.put(state.positions, joint, position)
+  def handle_info({:bb, _path, %BB.Message{payload: %BB.Message.Sensor.JointState{} = js}}, state) do
+    positions = Enum.into(Enum.zip(js.names, js.positions), state.positions)
 
     # Print all positions when we have updates for all joints
-    if map_size(positions) == length(@joints) do
+    if Enum.all?(@joints, &Map.has_key?(positions, &1)) do
       print_leg_position(positions)
     end
 
@@ -255,6 +297,12 @@ defmodule LegMonitor do
   defp rad_to_deg(rad), do: Float.round(rad * 180 / :math.pi(), 1)
 end
 ```
+
+**Joint identity comes from `JointState.names`, not from the message's
+`frame_id`.** The frame id names the coordinate frame the reading was taken in —
+conventionally the publishing sensor, so `:leg1_coxa_feedback` here, not the
+joint. `names` and `positions` are parallel lists, which is why zipping them into
+the accumulator handles a sensor reporting several joints at once.
 
 ## Limitations
 

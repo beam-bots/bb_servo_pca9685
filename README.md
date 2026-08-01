@@ -54,21 +54,34 @@ defmodule MyRobot do
 
   topology do
     link :base do
-      joint :shoulder, type: :revolute do
-        limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
+      joint :shoulder do
+        type :revolute
 
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+        limit lower: ~u(-45 degree),
+              upper: ~u(45 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(60 degree_per_second)
+
+        actuator :shoulder_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+
+        sensor :shoulder_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
 
         link :upper_arm do
-          joint :elbow, type: :revolute do
-            limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(60 degree_per_second)
+          joint :elbow do
+            type :revolute
 
-            actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
-            sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+            limit lower: ~u(-90 degree),
+                  upper: ~u(90 degree),
+                  effort: ~u(1 newton_meter),
+                  velocity: ~u(60 degree_per_second)
 
-            link :forearm do
-            end
+            actuator :elbow_servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
+
+            sensor :elbow_feedback,
+                   {BB.Sensor.OpenLoopPositionEstimator, actuator: :elbow_servo}
+
+            link :forearm
           end
         end
       end
@@ -76,6 +89,9 @@ defmodule MyRobot do
   end
 end
 ```
+
+Component names are unique across the whole robot, so each servo and estimator
+needs its own name rather than a per-joint `:servo`.
 
 The actuator automatically derives its configuration from the joint limits - no
 need to specify servo rotation range or speed separately.
@@ -85,29 +101,14 @@ need to specify servo rotation range or speed separately.
 Use the `BB.Actuator` module to send commands to servos. Three delivery methods
 are available:
 
-### Pubsub Delivery (for orchestration)
-
-Commands are published via pubsub, enabling logging, replay, and multi-subscriber
-patterns:
-
-```elixir
-# Send position command via pubsub
-BB.Actuator.set_position(MyRobot, [:base, :shoulder, :servo], 0.5)
-
-# With options
-BB.Actuator.set_position(MyRobot, [:base, :shoulder, :servo], 0.5,
-  command_id: make_ref()
-)
-```
+The robot must be armed first — a disarmed robot will not move.
 
 ### Direct Delivery (for time-critical control)
 
-Commands bypass pubsub for lower latency. Use when responsiveness matters more
-than observability:
+Fire-and-forget, addressed by the actuator's unique name:
 
 ```elixir
-# Fire-and-forget
-BB.Actuator.set_position!(MyRobot, :servo, 0.5)
+BB.Actuator.set_position!(MyRobot, :shoulder_servo, 0.5)
 ```
 
 ### Synchronous Delivery (with acknowledgement)
@@ -115,11 +116,27 @@ BB.Actuator.set_position!(MyRobot, :servo, 0.5)
 Wait for the actuator to acknowledge the command:
 
 ```elixir
-case BB.Actuator.set_position_sync(MyRobot, :servo, 0.5) do
+case BB.Actuator.set_position_sync(MyRobot, :shoulder_servo, 0.5) do
   {:ok, :accepted} -> :ok
   {:error, reason} -> handle_error(reason)
 end
 ```
+
+### Pubsub Delivery (for orchestration)
+
+`BB.Actuator.set_position/4` publishes to `[:actuator | path]` rather than
+addressing the process directly, which is what makes logging, replay and
+multi-subscriber patterns possible:
+
+```elixir
+BB.Actuator.set_position(MyRobot, [:base, :shoulder, :shoulder_servo], 0.5,
+  command_id: make_ref()
+)
+```
+
+This driver does not currently receive commands sent this way — nothing
+subscribes the actuator to its command topic, so the message is published and
+dropped. Use the name-based functions above until that's resolved upstream.
 
 ## Components
 
@@ -154,7 +171,7 @@ To reverse a servo relative to its joint, configure the actuator's joint
 transmission rather than passing an actuator option:
 
 ```elixir
-actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685} do
+actuator :shoulder_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685} do
   transmission do
     reversed? true
   end
@@ -175,7 +192,7 @@ feedback. It subscribes to actuator `BeginMotion` messages and interpolates
 position during movement.
 
 ```elixir
-sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+sensor :shoulder_feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
 ```
 
 ## How It Works

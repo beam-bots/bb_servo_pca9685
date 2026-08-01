@@ -30,18 +30,32 @@ defmodule BB.Servo.PCA9685 do
         controller :pca9685, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x40}
       end
 
-      joint :shoulder, type: :revolute do
-        limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
+      joint :shoulder do
+        type :revolute
 
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+        limit lower: ~u(-45 degree),
+              upper: ~u(45 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(60 degree_per_second)
+
+        actuator :shoulder_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+
+        sensor :shoulder_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
       end
 
-      joint :elbow, type: :revolute do
-        limit lower: ~u(-90 degree), upper: ~u(90 degree), velocity: ~u(45 degree_per_second)
+      joint :elbow do
+        type :revolute
 
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
-        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+        limit lower: ~u(-90 degree),
+              upper: ~u(90 degree),
+              effort: ~u(1 newton_meter),
+              velocity: ~u(45 degree_per_second)
+
+        actuator :elbow_servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
+
+        sensor :elbow_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :elbow_servo}
       end
 
   The actuator automatically derives its configuration from the joint limits - no need
@@ -89,14 +103,20 @@ defmodule BB.Servo.PCA9685 do
         controller :pca9685_b, {BB.Servo.PCA9685.Controller, bus: "i2c-1", address: 0x41}
       end
 
-      joint :shoulder, type: :revolute do
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_a}
+      joint :shoulder do
+        type :revolute
+        actuator :shoulder_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_a}
         # ...
       end
 
-      joint :gripper, type: :revolute do
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_b}
+      joint :gripper do
+        type :revolute
+        actuator :gripper_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_b}
         # ...
       end
+
+  Both actuators use channel 0 - of different boards. The `controller:` option
+  picks the board; the actuator names must still differ, since names are unique
+  across the whole robot.
   """
 end
