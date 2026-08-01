@@ -69,14 +69,16 @@ The library uses BB's:
 Send commands using the `BB.Actuator` module:
 
 ```elixir
-# Pubsub delivery (for orchestration/logging)
-BB.Actuator.set_position(MyRobot, [:joint, :servo], 0.5)
+# Arm first — a disarmed robot refuses commands before they reach the driver
+{:ok, cmd} = MyRobot.arm()
+{:ok, :armed, _} = BB.Command.await(cmd)
 
-# Direct delivery (fire-and-forget, lower latency)
-BB.Actuator.set_position!(MyRobot, :servo, 0.5)
-
-# Synchronous delivery (with acknowledgement)
-{:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot, :servo, 0.5)
+# Every function takes either the actuator's unique name or its full path, and
+# all three transports arrive at the driver's `handle_command/2`.
+BB.Actuator.set_position(MyRobot, :pan_servo, 0.5)                    # pubsub
+BB.Actuator.set_position(MyRobot, [:base, :pan, :pan_servo], 0.5)     # by path
+BB.Actuator.set_position!(MyRobot, :pan_servo, 0.5)                   # direct
+{:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot, :pan_servo, 0.5)
 ```
 
 ### Integration Pattern
@@ -91,11 +93,19 @@ defmodule MyRobot do
 
   topology do
     link :base do
-      joint :shoulder, type: :revolute do
-        limit lower: ~u(-45 degree), upper: ~u(45 degree), velocity: ~u(60 degree_per_second)
+      joint :pan do
+        type :revolute
 
-        actuator :servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
-        sensor :feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo}
+        limit lower: ~u(-45 degree), upper: ~u(45 degree),
+              velocity: ~u(60 degree_per_second), effort: ~u(1 newton_meter)
+
+        actuator :pan_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
+
+        sensor :pan_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :pan_servo}
+
+        link :head do
+        end
       end
     end
   end
