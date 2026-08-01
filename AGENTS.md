@@ -45,10 +45,13 @@ Actuator (GenServer) --publishes--> BeginMotion --> OpenLoopPositionEstimator
 
 - **Controller** (`lib/bb/servo/pca9685/controller.ex`) - GenServer wrapping `PCA9685.Device`. Handles I2C bus connection, PWM frequency, and optional output-enable GPIO. Multiple actuators share one controller via channels 0-15.
 
-- **Actuator** (`lib/bb/servo/pca9685/actuator.ex`) - GenServer that receives position commands (radians), converts to PWM pulse width based on joint limits, sends to controller, and publishes `BB.Message.Actuator.BeginMotion` messages. Handles commands via three delivery methods:
-  - `handle_info/2` for pubsub delivery (`BB.Actuator.set_position/4`)
-  - `handle_cast/2` for direct delivery (`BB.Actuator.set_position!/4`)
-  - `handle_call/3` for synchronous delivery (`BB.Actuator.set_position_sync/5`)
+- **Actuator** (`lib/bb/servo/pca9685/actuator.ex`) - GenServer that receives position commands (radians), converts to PWM pulse width based on joint limits, sends to controller, and publishes `BB.Message.Actuator.BeginMotion` messages. Accepts commands sent via:
+  - `BB.Actuator.set_position/4` (pubsub)
+  - `BB.Actuator.set_position!/4` (direct)
+  - `BB.Actuator.set_position_sync/5` (synchronous)
+
+  All three arrive at `handle_command/2`; `BB.Actuator.Server` checks arm state and applies
+  the joint's transmission before the driver sees them.
 
 ### BB Framework Integration
 
