@@ -202,6 +202,20 @@ defmodule BB.Servo.PCA9685.Actuator do
     do_set_position(cmd.position, cmd.command_id, state)
   end
 
+  # `Stop` means cease travelling and become passive — the counterpart to `Hold`,
+  # which maintains position. Cutting the pulse train leaves an RC servo unpowered
+  # and free to backdrive, which is exactly that. Same primitive `disarm/1` uses,
+  # scoped to this channel rather than the whole board.
+  #
+  # This is not the safety path: making hardware safe is `disarm/1`.
+  def handle_command(%Message{payload: %Command.Stop{}}, state) do
+    case BBProcess.call(state.bb.robot, state.controller, {:pulse_width, state.channel, 0}) do
+      :ok -> {:noreply, state}
+      {:ok, _} -> {:noreply, state}
+      {:error, reason} -> {:stop, reason, state}
+    end
+  end
+
   def handle_command(%Message{}, state), do: {:noreply, state}
 
   defp do_set_position(motor_angle, command_id, state) when is_integer(motor_angle),

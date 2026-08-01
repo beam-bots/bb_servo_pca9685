@@ -228,6 +228,42 @@ defmodule BB.Servo.PCA9685.ActuatorTest do
     end
   end
 
+  describe "stop" do
+    setup do
+      stub_controller_success()
+
+      opts = [
+        bb: default_bb_context(),
+        channel: 0,
+        controller: @controller_name,
+        min_pulse: 500,
+        max_pulse: 2500,
+        motor_profile: motor_profile(motor_lower: -1.0, motor_upper: 1.0)
+      ]
+
+      {:ok, state} = Actuator.init(opts)
+
+      {:ok, state: state}
+    end
+
+    test "cuts the pulse train for its own channel", %{state: state} do
+      test_pid = self()
+
+      expect(BB.Process, :call, fn TestRobot, @controller_name, {:pulse_width, 0, pulse} ->
+        send(test_pid, {:pulse, pulse})
+        :ok
+      end)
+
+      assert {:noreply, _state} =
+               Actuator.handle_command(
+                 %Message{payload: %Command.Stop{}},
+                 state
+               )
+
+      assert_receive {:pulse, 0}
+    end
+  end
+
   describe "position clamping" do
     setup do
       stub_controller_success()
