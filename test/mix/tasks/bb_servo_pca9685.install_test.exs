@@ -19,11 +19,10 @@ defmodule Mix.Tasks.BbServoPca9685.InstallTest do
       project_with_robot()
       |> Igniter.compose_task("bb_servo_pca9685.install")
       |> assert_has_patch("lib/test/robot.ex", """
-      + |    controller(
-      + |      :pca9685,
-      + |      {BB.Servo.PCA9685.Controller,
-      + |       bus: param([:config, :pca9685, :bus]), address: param([:config, :pca9685, :address])}
-      + |    )
+      + |    controller :pca9685,
+      + |               {BB.Servo.PCA9685.Controller,
+      + |                bus: param([:config, :pca9685, :bus]),
+      + |                address: param([:config, :pca9685, :address])}
       """)
     end
 
@@ -31,8 +30,7 @@ defmodule Mix.Tasks.BbServoPca9685.InstallTest do
       project_with_robot()
       |> Igniter.compose_task("bb_servo_pca9685.install", ["--name", "pwm"])
       |> assert_has_patch("lib/test/robot.ex", """
-      + |    controller(
-      + |      :pwm,
+      + |    controller :pwm,
       """)
     end
   end
@@ -44,7 +42,7 @@ defmodule Mix.Tasks.BbServoPca9685.InstallTest do
       |> assert_has_patch("lib/test/robot.ex", """
       + |    group :config do
       + |      group :pca9685 do
-      + |        param(:bus, type: :string, doc: "I2C bus name (e.g. \\"i2c-1\\")")
+      + |        param :bus, type: :string, doc: "I2C bus name (e.g. \\"i2c-1\\")"
       """)
     end
   end
