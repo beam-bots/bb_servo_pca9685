@@ -37,7 +37,7 @@ end
 ## Requirements
 
 - PCA9685 PWM controller connected via I2C
-- BB framework (`~> 0.20`)
+- BB framework (`~> 0.25`)
 
 ## Usage
 
