@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.7.1](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.7.0...v0.7.1) (2026-08-02)
+
+
+
+
+### Bug Fixes:
+
+* actually stop when told to (#89) by James Harton
+
 ## [v0.7.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.6.2...v0.7.0) (2026-08-01)
 ### Breaking Changes:
 
