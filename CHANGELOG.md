@@ -11,6 +11,13 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.9.0](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.8.1...v0.9.0) (2026-08-04)
+### Breaking Changes:
+
+* follow the `positions` to `configurations` rename in core (#95) by James Harton
+
+
+
 ## [v0.8.1](https://github.com/beam-bots/bb_servo_pca9685/compare/v0.8.0...v0.8.1) (2026-08-03)
 
 
