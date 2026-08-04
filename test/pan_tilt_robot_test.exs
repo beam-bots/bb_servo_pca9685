@@ -64,11 +64,11 @@ defmodule PanTiltRobotTest do
     {:ok, :accepted} = BB.Actuator.set_position_sync(PanTiltRobot, :pan_servo, 0.5)
     assert_position_settles(:pan, 0.5)
 
-    assert %{pan: _, tilt: _} = Runtime.positions(PanTiltRobot)
+    assert %{pan: _, tilt: _} = Runtime.configurations(PanTiltRobot)
   end
 
   defp assert_position_settles(joint, target, attempts \\ 40) do
-    position = Map.get(Runtime.positions(PanTiltRobot), joint)
+    position = Map.get(Runtime.configurations(PanTiltRobot), joint)
 
     cond do
       abs(position - target) < 0.01 ->

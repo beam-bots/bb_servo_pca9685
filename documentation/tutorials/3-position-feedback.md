@@ -161,7 +161,7 @@ You can also ask the runtime, which keeps a live map of joint positions built
 from these same messages:
 
 ```elixir
-iex> BB.Robot.Runtime.positions(MyRobot)
+iex> BB.Robot.Runtime.configurations(MyRobot)
 %{pan: 0.7853981633974483}
 ```
 
