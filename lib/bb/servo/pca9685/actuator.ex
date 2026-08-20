@@ -41,6 +41,16 @@ defmodule BB.Servo.PCA9685.Actuator do
         sensor :shoulder_feedback,
                {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
       end
+
+  ## Position feedback
+
+  An RC servo has no return path, so this driver declares no
+  `c:BB.Actuator.capabilities/1` - it writes PWM and reads nothing. The
+  `BB.Sensor.OpenLoopPositionEstimator` alongside it isn't decoration: it turns
+  the `BeginMotion` message published above into `BB.Message.Sensor.JointState`,
+  which is the only thing `BB.Robot.State` is written from. Leave it out and the
+  joint reads as parked at its initial position however far the servo travels;
+  `BB.Dsl` warns at compile time when it finds one.
   """
   use BB.Actuator,
     options_schema: [

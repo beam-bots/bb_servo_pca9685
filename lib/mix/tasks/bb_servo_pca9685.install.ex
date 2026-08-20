@@ -103,6 +103,11 @@ if Code.ensure_loaded?(Igniter) do
 
       Component names are unique robot-wide, so give each joint's servo and
       estimator their own names.
+
+      The estimator is part of the wiring, not an extra: `BB.Robot.State` is
+      written from `BB.Message.Sensor.JointState` messages and from nothing else,
+      and an RC servo reports nothing back, so a joint without one reads as
+      parked at its initial position however far the servo travels.
       """
     end
   end

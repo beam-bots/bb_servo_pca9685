@@ -51,6 +51,9 @@ defmodule MyRobot do
 
         actuator :pan_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
 
+        sensor :pan_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :pan_servo}
+
         link :head
       end
     end
@@ -64,6 +67,14 @@ a tree of links and joints, with each servo attached as an `actuator` inside its
 joint. `commands` declares the arm and disarm commands; a robot starts
 `:disarmed` and won't move until armed, so a robot without them can't be
 commanded at all.
+
+The `sensor` entry is the one part that isn't about hardware. An RC servo
+reports nothing back, and `BB.Robot.State` is written from
+`BB.Message.Sensor.JointState` messages and from nothing else, so without
+`BB.Sensor.OpenLoopPositionEstimator` the joint reads as stuck at its initial
+position no matter how much the servo moves. BB warns at compile time about a
+joint nothing reports on.
+[Position Feedback](3-position-feedback.md) covers how the estimate is produced.
 
 Component names must be unique across the whole robot — BB registers every
 process under its name. That's why the actuator is `:pan_servo` rather than
@@ -191,37 +202,46 @@ checks.
 
 ## Commanding the Servo
 
-With the robot armed, send position commands by actuator name. `set_position/4`
-publishes via pubsub, `set_position!/4` fires and forgets, and
-`set_position_sync/5` waits for the actuator to acknowledge:
+With the robot armed, send position commands by actuator name.
+`set_position/4` publishes the command for observers, waits for the actuator to
+take it, and answers `:ok` or `{:error, reason}` — so a refusal is something you
+find out about rather than assume away:
 
 ```elixir
 # Move to centre (0 degrees)
-BB.Actuator.set_position(MyRobot, :pan_servo, 0.0)
+:ok = BB.Actuator.set_position(MyRobot, :pan_servo, 0.0)
 
 # Move to -45 degrees (in radians)
-BB.Actuator.set_position!(MyRobot, :pan_servo, -0.785)
-
-# Wait for acknowledgement
-{:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot, :pan_servo, -0.785)
+case BB.Actuator.set_position(MyRobot, :pan_servo, -0.785) do
+  :ok -> :moving
+  {:error, reason} -> Logger.error(Exception.message(reason))
+end
 
 # Using the unit sigil for degrees
 import BB.Unit
-BB.Actuator.set_position!(MyRobot, :pan_servo, BB.Robot.Units.to_radians(~u(-45 degree)))
+:ok = BB.Actuator.set_position(MyRobot, :pan_servo, BB.Robot.Units.to_radians(~u(-45 degree)))
 ```
 
 > **Note:** The DSL takes `~u` sigil values, but the runtime command functions
 > take plain numbers in SI base units — radians here. Convert with
 > `BB.Robot.Units.to_radians/1`.
 
+For a control path that can't afford the round trip, `delivery: :direct` casts
+to the actuator and publishes nothing. It always returns `:ok`, so a refusal
+reaches only the log and telemetry:
+
+```elixir
+BB.Actuator.set_position(MyRobot, :pan_servo, -0.785, delivery: :direct)
+```
+
 You command joints in **joint-space**. BB applies the joint's transmission and
 hands this driver motor-space values, so the driver never does joint-to-motor
 maths.
 
-All three take either the actuator's unique name or its full path through the
-topology (`[:base, :pan, :pan_servo]` here), and all three arrive at the
-driver's `handle_command/2` — which transport you chose isn't something the
-driver can see.
+Both take either the actuator's unique name or its full path through the
+topology (`[:base, :pan, :pan_servo]` here), and both arrive at the driver's
+`handle_command/2` — which delivery you chose isn't something the driver can
+see.
 
 ## Position Clamping
 
@@ -230,7 +250,7 @@ The actuator automatically clamps positions to the joint limits:
 ```elixir
 # Joint limits are -90° to +90°
 # This command will be clamped to +90° (π/2 radians)
-BB.Actuator.set_position!(MyRobot, :pan_servo, 3.14)  # Requested: 180°, actual: 90°
+BB.Actuator.set_position(MyRobot, :pan_servo, 3.14)  # Requested: 180°, actual: 90°
 ```
 
 ## Reversing Direction
@@ -288,6 +308,9 @@ defmodule PanTiltRobot do
 
         actuator :pan_servo, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685}
 
+        sensor :pan_feedback,
+               {BB.Sensor.OpenLoopPositionEstimator, actuator: :pan_servo}
+
         link :pan_platform do
           joint :tilt do
             type :revolute
@@ -299,6 +322,9 @@ defmodule PanTiltRobot do
 
             actuator :tilt_servo, {BB.Servo.PCA9685.Actuator, channel: 1, controller: :pca9685}
 
+            sensor :tilt_feedback,
+                   {BB.Sensor.OpenLoopPositionEstimator, actuator: :tilt_servo}
+
             link :camera_mount
           end
         end
@@ -308,8 +334,9 @@ defmodule PanTiltRobot do
 end
 ```
 
-Note that each servo has its own name. Naming both `:servo` is the most common
-way to get a compile error here — names are global, not scoped to their joint.
+Note that each servo and estimator has its own name. Naming both `:servo` is the
+most common way to get a compile error here — names are global, not scoped to
+their joint.
 
 Command both servos:
 
@@ -318,8 +345,8 @@ Command both servos:
 {:ok, :armed, _} = BB.Command.await(command)
 
 # Look left and up
-BB.Actuator.set_position!(PanTiltRobot, :pan_servo, -0.785)   # -45°
-BB.Actuator.set_position!(PanTiltRobot, :tilt_servo, 0.524)   # +30°
+:ok = BB.Actuator.set_position(PanTiltRobot, :pan_servo, -0.785)   # -45°
+:ok = BB.Actuator.set_position(PanTiltRobot, :tilt_servo, 0.524)   # +30°
 ```
 
 ## Example: Hexapod Leg (6 Servos)
@@ -450,6 +477,7 @@ defmodule BigRobot do
               velocity: ~u(60 degree_per_second)
 
         actuator :servo_0, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_a}
+        sensor :servo_0_feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo_0}
 
         link :link_0
       end
@@ -464,6 +492,7 @@ defmodule BigRobot do
               velocity: ~u(60 degree_per_second)
 
         actuator :servo_16, {BB.Servo.PCA9685.Actuator, channel: 0, controller: :pca9685_b}
+        sensor :servo_16_feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :servo_16}
 
         link :link_16
       end
@@ -473,7 +502,7 @@ end
 ```
 
 Both actuators sit on channel 0 — of different boards. It's the `controller:`
-option that picks the board, and the actuator names that must differ.
+option that picks the board, and the component names that must differ.
 
 ## Output Enable Control
 

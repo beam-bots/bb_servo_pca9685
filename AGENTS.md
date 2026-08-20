@@ -46,12 +46,16 @@ Actuator (GenServer) --publishes--> BeginMotion --> OpenLoopPositionEstimator
 - **Controller** (`lib/bb/servo/pca9685/controller.ex`) - GenServer wrapping `PCA9685.Device`. Handles I2C bus connection, PWM frequency, and optional output-enable GPIO. Multiple actuators share one controller via channels 0-15.
 
 - **Actuator** (`lib/bb/servo/pca9685/actuator.ex`) - GenServer that receives position commands (radians), converts to PWM pulse width based on joint limits, sends to controller, and publishes `BB.Message.Actuator.BeginMotion` messages. Accepts commands sent via:
-  - `BB.Actuator.set_position/4` (pubsub)
-  - `BB.Actuator.set_position!/4` (direct)
-  - `BB.Actuator.set_position_sync/5` (synchronous)
+  - `BB.Actuator.set_position/4` (published for observers, delivered by a call, returns `:ok` or `{:error, reason}`)
+  - `BB.Actuator.set_position/4` with `delivery: :direct` (cast, publishes nothing, always returns `:ok`)
 
-  All three arrive at `handle_command/2`; `BB.Actuator.Server` checks arm state and applies
+  Both arrive at `handle_command/2`; `BB.Actuator.Server` checks arm state and applies
   the joint's transmission before the driver sees them.
+
+  The driver writes PWM and reads nothing back, so it declares no
+  `c:BB.Actuator.capabilities/1` - the default `[]` is the honest answer, and a
+  joint driven by it needs `BB.Sensor.OpenLoopPositionEstimator` for anything to
+  know where it is.
 
 ### BB Framework Integration
 
@@ -62,7 +66,10 @@ The library uses BB's:
 - `BB.Process.call` to communicate with sibling processes via the robot registry
 - `Spark.Options` for configuration validation
 - Joint limits from robot topology to derive servo parameters
-- `BB.Sensor.OpenLoopPositionEstimator` for position feedback (from BB core)
+- `BB.Sensor.OpenLoopPositionEstimator` (from BB core) for position feedback -
+  required, not optional: `BB.Robot.State` is written from
+  `BB.Message.Sensor.JointState` and nothing else, so without the estimator the
+  joint stays at its initial configuration and BB warns at compile time
 
 ### Command Interface
 
@@ -73,12 +80,14 @@ Send commands using the `BB.Actuator` module:
 {:ok, cmd} = MyRobot.arm()
 {:ok, :armed, _} = BB.Command.await(cmd)
 
-# Every function takes either the actuator's unique name or its full path, and
-# all three transports arrive at the driver's `handle_command/2`.
-BB.Actuator.set_position(MyRobot, :pan_servo, 0.5)                    # pubsub
-BB.Actuator.set_position(MyRobot, [:base, :pan, :pan_servo], 0.5)     # by path
-BB.Actuator.set_position!(MyRobot, :pan_servo, 0.5)                   # direct
-{:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot, :pan_servo, 0.5)
+# Either the actuator's unique name or its full path, and both deliveries
+# arrive at the driver's `handle_command/2`.
+:ok = BB.Actuator.set_position(MyRobot, :pan_servo, 0.5)
+:ok = BB.Actuator.set_position(MyRobot, [:base, :pan, :pan_servo], 0.5)
+
+# Fire-and-forget for time-critical control. Always returns `:ok`, so a refusal
+# reaches only the log and telemetry.
+BB.Actuator.set_position(MyRobot, :pan_servo, 0.5, delivery: :direct)
 ```
 
 ### Integration Pattern

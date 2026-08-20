@@ -7,9 +7,11 @@ defmodule BB.Servo.PCA9685 do
   BB integration for driving RC servos via the PCA9685 PWM controller.
 
   This library provides controller and actuator modules for controlling RC
-  servos through a PCA9685 16-channel PWM controller connected via I2C. For
-  open-loop position feedback, use `BB.Sensor.OpenLoopPositionEstimator` from
-  BB core.
+  servos through a PCA9685 16-channel PWM controller connected via I2C. The
+  hardware reports nothing back, so pair every actuator with
+  `BB.Sensor.OpenLoopPositionEstimator` from BB core - it is the only thing that
+  publishes `BB.Message.Sensor.JointState` for a servo joint, and
+  `BB.Robot.State` is written from those messages and from nothing else.
 
   ## Components
 
@@ -93,6 +95,12 @@ defmodule BB.Servo.PCA9685 do
   - Position interpolation during movement
   - Configurable publish rate (default 50Hz)
   - Periodic sync publishing even when idle (default every 5 seconds)
+
+  Those `JointState` messages are what `BB.Robot.State` is built from, so a joint
+  without an estimator stays at its initial configuration forever and anything
+  reading joint positions - forward kinematics, the URDF visualisers, inverse
+  kinematics - works from a robot that never moved. `BB.Dsl` warns at compile time
+  about a joint nothing reports on.
 
   ## Multiple PCA9685 Boards
 
