@@ -102,40 +102,37 @@ Use the `BB.Actuator` module to send commands to servos. The robot must be armed
 first — a disarmed robot will not move, and as of bb 0.23 the framework refuses
 the command before it reaches the driver.
 
-Three transports are available. They differ only in delivery: all three arrive
-at the driver's `handle_command/2`, and each takes either the actuator's unique
-name or its full path through the topology.
+`BB.Actuator.set_position/4` takes either the actuator's unique name or its full
+path through the topology, and a `:delivery` option choosing between two
+transports. Both arrive at the driver's `handle_command/2`, which can't tell them
+apart.
+
+### Default Delivery (published and acknowledged)
+
+The command is published to `[:actuator | path]`, which is what makes logging,
+replay and multi-subscriber patterns possible, and delivered to the actuator by
+a call, so the caller learns whether the joint is actually moving:
+
+```elixir
+case BB.Actuator.set_position(MyRobot, :shoulder_servo, 0.5) do
+  :ok -> :moving
+  {:error, reason} -> handle_error(reason)
+end
+
+# By full path, with a correlation ID for feedback tracking
+:ok = BB.Actuator.set_position(MyRobot, [:base, :shoulder, :shoulder_servo], 0.5,
+        command_id: make_ref())
+```
 
 ### Direct Delivery (for time-critical control)
 
-Fire-and-forget, addressed by the actuator's unique name:
+Casts to the actuator and publishes nothing, for control paths that can't afford
+the round trip. It **always returns `:ok`**, so a refusal reaches the log and
+`[:bb, :actuator, :rejected]` telemetry and nowhere else — don't write an error
+branch that can never run:
 
 ```elixir
-BB.Actuator.set_position!(MyRobot, :shoulder_servo, 0.5)
-```
-
-### Synchronous Delivery (with acknowledgement)
-
-Wait for the actuator to acknowledge the command:
-
-```elixir
-case BB.Actuator.set_position_sync(MyRobot, :shoulder_servo, 0.5) do
-  {:ok, :accepted} -> :ok
-  {:error, reason} -> handle_error(reason)
-end
-```
-
-### Pubsub Delivery (for orchestration)
-
-`BB.Actuator.set_position/4` publishes to `[:actuator | path]` rather than
-addressing the process directly, which is what makes logging, replay and
-multi-subscriber patterns possible:
-
-```elixir
-BB.Actuator.set_position(MyRobot, :shoulder_servo, 0.5, command_id: make_ref())
-
-# Or by full path
-BB.Actuator.set_position(MyRobot, [:base, :shoulder, :shoulder_servo], 0.5)
+BB.Actuator.set_position(MyRobot, :shoulder_servo, 0.5, delivery: :direct)
 ```
 
 ## Components
@@ -188,12 +185,19 @@ end
 ### Sensor
 
 Use `BB.Sensor.OpenLoopPositionEstimator` from the BB core library for position
-feedback. It subscribes to actuator `BeginMotion` messages and interpolates
-position during movement.
+feedback. It subscribes to actuator `BeginMotion` messages, interpolates position
+during movement, and publishes it as `BB.Message.Sensor.JointState`.
 
 ```elixir
 sensor :shoulder_feedback, {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
 ```
+
+Give every servo-driven joint one. `BB.Robot.State` is written from
+`JointState` messages and from nothing else — commanding a joint doesn't move it
+in state — so a joint without an estimator stays at its initial configuration
+forever, and forward kinematics, the URDF visualisers and inverse kinematics all
+keep working from a robot that never moved. BB warns at compile time about a
+joint nothing reports on.
 
 ## How It Works
 
@@ -239,8 +243,11 @@ times:
 1. Actuator sends command and publishes `BeginMotion` with expected arrival time
 2. Sensor receives `BeginMotion` and interpolates position during movement
 3. After arrival time, sensor reports the target position
+4. Sensor publishes the estimate as `JointState`, which is what writes
+   `BB.Robot.State`
 
-This provides realistic position feedback for trajectory planning and monitoring.
+That last step is why the estimator is part of the wiring rather than an extra:
+it is the only thing that tells the rest of the framework where an RC servo is.
 
 ### Motion Lifecycle
 

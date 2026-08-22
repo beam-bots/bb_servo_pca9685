@@ -11,6 +11,15 @@ RC servos don't provide position feedback, but core's
 targets and timing. This tutorial shows you how to set up and use estimated
 position feedback.
 
+The estimator isn't an extra you add once everything else works. `BB.Robot.State`
+is written from `BB.Message.Sensor.JointState` messages and from nothing else, so
+until something publishes them, a joint reads as parked at its initial position
+no matter how far the servo has actually travelled — and forward kinematics, the
+URDF visualisers and inverse kinematics all work from that. This driver reads
+nothing back from the hardware, so on a servo joint the estimator is the only
+thing that can publish those messages. BB warns at compile time about a joint
+nothing reports on.
+
 ## Prerequisites
 
 - Completed [Basic Usage](2-basic-usage.md)
@@ -61,6 +70,7 @@ end
 ```
 
 The sensor requires the `actuator` option to know which actuator to subscribe to.
+Declaring it is also what silences the compile-time warning for this joint.
 
 > **Under simulation only**, BB adds an estimator for any actuator that doesn't
 > already have one, named `:<actuator>_position_estimator`. On real hardware you
@@ -205,7 +215,7 @@ Start the logger:
 {:ok, :armed, _} = BB.Command.await(command)
 
 # Move the servo and watch the logs
-BB.Actuator.set_position!(MyRobot, :pan_servo, 0.785)
+:ok = BB.Actuator.set_position(MyRobot, :pan_servo, 0.785)
 # Output:
 # [2025-01-15 10:30:00.000000Z] Pan: 9.0°
 # [2025-01-15 10:30:00.020000Z] Pan: 18.0°
@@ -223,9 +233,9 @@ defmodule ServoHelper do
   def move_and_wait(robot, sensor_path, actuator, target, timeout \\ 5000) do
     BB.subscribe(robot, sensor_path)
 
-    BB.Actuator.set_position!(robot, actuator, target)
-
-    wait_for_position(target, timeout)
+    with :ok <- BB.Actuator.set_position(robot, actuator, target) do
+      wait_for_position(target, timeout)
+    end
   end
 
   defp wait_for_position(target, timeout) do
@@ -324,6 +334,11 @@ For applications requiring precise position feedback, consider:
 driver-specific module. When changing servo drivers, keep the estimator and
 make sure its `actuator` option names the replacement actuator. Any compatible
 actuator that publishes `BB.Message.Actuator.BeginMotion` can use it.
+
+A driver for hardware that *does* read position back — a smart servo answering
+position queries on its bus — declares `c:BB.Actuator.capabilities/1` and
+publishes `JointState` itself. Swapping to one of those is the one case where you
+drop the estimator rather than repointing it.
 
 ## Next Steps
 

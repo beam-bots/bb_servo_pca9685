@@ -25,9 +25,16 @@ this driver.
    range linearly onto the PWM pulse range. You never declare rotation range or
    speed on the actuator — only the pulse endpoints if the servo's defaults
    don't fit.
-3. **Position feedback is open-loop.** RC servos report nothing back. Pair each
+3. **Position feedback is open-loop, and not optional.** RC servos report
+   nothing back, and this driver declares no `capabilities/1`, so pair every
    actuator with core's `BB.Sensor.OpenLoopPositionEstimator`, which
-   interpolates position from the `BeginMotion` message the actuator publishes.
+   interpolates position from the `BeginMotion` message the actuator publishes
+   and reports it as `BB.Message.Sensor.JointState`. `BB.Robot.State` is written
+   from those messages and from nothing else — commanding a joint doesn't move it
+   in state — so a joint without an estimator stays at its initial configuration
+   and every consumer of joint positions (forward kinematics, the URDF
+   visualisers, IK, which seeds each solve from the current configuration) works
+   from a robot that never moved. BB warns at compile time when it finds one.
 
 ## Installing
 
@@ -80,9 +87,11 @@ Command it with `BB.Actuator` once the robot is armed (values are joint-space
 radians; BB applies the joint transmission before the driver sees motor-space):
 
 ```elixir
-BB.Actuator.set_position(MyRobot.Robot, :shoulder_servo, 0.5)
-BB.Actuator.set_position!(MyRobot.Robot, :shoulder_servo, 0.5)
-{:ok, :accepted} = BB.Actuator.set_position_sync(MyRobot.Robot, :shoulder_servo, 0.5)
+# Published for observers and delivered by a call, so a refusal reaches you
+:ok = BB.Actuator.set_position(MyRobot.Robot, :shoulder_servo, 0.5)
+
+# Cast, for control paths that can't afford the round trip. Always returns `:ok`
+BB.Actuator.set_position(MyRobot.Robot, :shoulder_servo, 0.5, delivery: :direct)
 ```
 
 ## Options
@@ -120,10 +129,12 @@ BB.Actuator.set_position!(MyRobot.Robot, :shoulder_servo, 0.5)
   to `simulation: :omit`, so the real PCA9685 controller does not start; set
   `simulation: :mock` or `:start` on the entry if you need it. Actuators are
   swapped for `BB.Sim.Actuator` and the open-loop estimator works unchanged.
-- **Address the actuator by name or by full path, never a partial one.** All
-  three transports accept either, and a name is resolved for you. A partial
-  path like `[:shoulder, :servo]` matches no subscriber, so the command is
-  published and dropped.
+- **Address the actuator by name or by full path, never a partial one.** Both
+  deliveries accept either, and a name is resolved for you — naming an actuator
+  the robot doesn't have raises. A partial path like `[:shoulder, :servo]` still
+  reaches the servo, because only its last element addresses the process, but it
+  publishes on a topic nothing is subscribed to, so observers silently miss the
+  command.
 - **Don't reuse a component name across joints.** Names are unique robot-wide,
   not scoped to their joint, so `:servo` on two joints fails to compile. Name
   them after the joint (`:shoulder_servo`, `:elbow_servo`).

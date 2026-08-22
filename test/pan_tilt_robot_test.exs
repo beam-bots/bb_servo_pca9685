@@ -39,15 +39,15 @@ defmodule PanTiltRobotTest do
   test "actuators are reachable by name" do
     :ok = arm()
 
-    assert {:ok, :accepted} = BB.Actuator.set_position_sync(PanTiltRobot, :pan_servo, 0.5)
-    assert {:ok, :accepted} = BB.Actuator.set_position_sync(PanTiltRobot, :tilt_servo, -0.2)
+    assert BB.Actuator.set_position(PanTiltRobot, :pan_servo, 0.5) == :ok
+    assert BB.Actuator.set_position(PanTiltRobot, :tilt_servo, -0.2) == :ok
   end
 
   test "feedback arrives on the joint's full topology path" do
     :ok = arm()
     BB.subscribe(PanTiltRobot, [:sensor, :base, :pan, :pan_feedback])
 
-    {:ok, :accepted} = BB.Actuator.set_position_sync(PanTiltRobot, :pan_servo, 0.5)
+    :ok = BB.Actuator.set_position(PanTiltRobot, :pan_servo, 0.5)
 
     assert_receive {:bb, [:sensor, :base, :pan, :pan_feedback],
                     %Message{frame_id: :pan_feedback, payload: %JointState{} = joint_state}},
@@ -61,7 +61,7 @@ defmodule PanTiltRobotTest do
   test "runtime reports positions keyed by joint name" do
     :ok = arm()
 
-    {:ok, :accepted} = BB.Actuator.set_position_sync(PanTiltRobot, :pan_servo, 0.5)
+    :ok = BB.Actuator.set_position(PanTiltRobot, :pan_servo, 0.5)
     assert_position_settles(:pan, 0.5)
 
     assert %{pan: _, tilt: _} = Runtime.configurations(PanTiltRobot)
