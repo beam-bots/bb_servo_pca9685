@@ -60,26 +60,26 @@ defmodule PanTiltRobotTest do
 
   test "runtime reports positions keyed by joint name" do
     :ok = arm()
+    BB.subscribe(PanTiltRobot, [:sensor, :base, :pan, :pan_feedback])
 
     :ok = BB.Actuator.set_position(PanTiltRobot, :pan_servo, 0.5)
-    assert_position_settles(:pan, 0.5)
+    await_pan_feedback_at(0.5)
 
-    assert %{pan: _, tilt: _} = Runtime.configurations(PanTiltRobot)
+    # The runtime is another subscriber to the same feedback, so the estimator
+    # has to finish publishing before syncing the runtime proves it has the
+    # reading too.
+    :sys.get_state(BB.Process.whereis(PanTiltRobot, :pan_feedback))
+    :sys.get_state(Runtime.via(PanTiltRobot))
+
+    assert %{pan: pan, tilt: _} = Runtime.configurations(PanTiltRobot)
+    assert_in_delta pan, 0.5, 0.01
   end
 
-  defp assert_position_settles(joint, target, attempts \\ 40) do
-    position = Map.get(Runtime.configurations(PanTiltRobot), joint)
+  defp await_pan_feedback_at(target) do
+    assert_receive {:bb, [:sensor, :base, :pan, :pan_feedback],
+                    %Message{payload: %JointState{positions: [position]}}},
+                   2_000
 
-    cond do
-      abs(position - target) < 0.01 ->
-        :ok
-
-      attempts > 0 ->
-        Process.sleep(50)
-        assert_position_settles(joint, target, attempts - 1)
-
-      true ->
-        flunk("#{joint} settled at #{position}, expected #{target}")
-    end
+    if abs(position - target) >= 0.01, do: await_pan_feedback_at(target)
   end
 end
